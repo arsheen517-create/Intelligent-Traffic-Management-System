@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width,
+               initial-scale=1.0">
+
+<title>
+  Smart ITMS Admin Control Center
+</title>
+
+<link
+ href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap"
+ rel="stylesheet">
+
+<link
+ rel="stylesheet"
+ href="{{ url_for('static',
+ filename='css/main.css') }}">
+
+<link
+ rel="stylesheet"
+ href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<script
+ src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+</script>
+
+<script
+ src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js">
+</script>
+
+<script
+ src="{{ url_for('static', filename='js/traffic_density_overlay.js') }}">
+</script>
+
+<style>
+
+body{
+  font-family:'Inter',sans-serif;
+  overflow:hidden;
+}
+
+.layout{
+  display:flex;
+  height:100vh;
+}
+
+/* SIDEBAR */
+
+.sidebar{
+  width:260px;
+  background:var(--surface);
+  border-right:1px solid var(--glass-border);
+  display:flex;
+  flex-direction:column;
+  padding:1rem 0;
+}
+
+.brand{
+  font-size:1.2rem;
+  font-weight:700;
+  padding:0 1.3rem 1.5rem;
+  background:var(--gradient-primary);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+
+.nav-link{
+  display:flex;
+  align-items:center;
+  gap:.7rem;
+  padding:.8rem 1.3rem;
+  color:var(--text-muted);
+  text-decoration:none;
+  transition:.2s;
+  border-left:3px solid transparent;
+}
+
+.nav-link:hover,
+.nav-link.active{
+  color:white;
+  border-left-color:#ef4444;
+  background:rgba(239,68,68,.1);
+}
+
+/* MAIN */
+
+.main{
+  flex:1;
+  overflow-y:auto;
+  padding:1.5rem;
+}
+
+/* HEADER */
+
+.top-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:1.5rem;
+}
+
+.page-title{
+  font-size:1.6rem;
+  font-weight:700;
+}
+
+/* STAT CARDS */
+
+.stat-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:1rem;
+  margin-bottom:1.5rem;
+}
+
+.stat-card{
+  background:var(--surface);
+  border:1px solid var(--glass-border);
+  border-radius:16px;
+  padding:1.3rem;
+  position:relative;
+  overflow:hidden;
+}
+
+.stat-card::before{
+  content:'';
+  position:absolute;
+  top:0;
+  left:0;
+  right:0;
+  height:4px;
+}
+
+.blue::before{background:#3b82f6;}
+.green::before{background:#22c55e;}
+.red::before{background:#ef4444;}
+.orange::before{background:#f59e0b;}
+
+.stat-value{
+  font-size:2rem;
+  font-weight:700;
+}
+
+.stat-label{
+  color:var(--text-muted);
+  margin-top:.3rem;
+  font-size:.85rem;
+}
+
+/* LIVE GRID */
+
+.grid{
+  display:grid;
+  grid-template-columns:1.2fr .8fr;
+  gap:1rem;
+}
+
+/* MAP */
+
+#admin-map{
+  width:100%;
+  height:650px;
+  border-radius:16px;
+  overflow:hidden;
+}
+
+/* SIDE PANELS */
+
+.panel{
+  background:var(--surface);
+  border:1px solid var(--glass-border);
+  border-radius:16px;
+  padding:1rem;
+  margin-bottom:1rem;
+}
+
+.panel-title{
+  font-weight:700;
+  margin-bottom:1rem;
+}
+
+/* SIGNALS */
+
+.signal-grid{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  gap:.8rem;
+}
+
+.signal-card{
+  background:rgba(255,255,255,.04);
+  border-radius:12px;
+  padding:1rem;
+  text-align:center;
+}
+
+.signal-light{
+  width:45px;
+  height:45px;
+  border-radius:50%;
+  margin:auto;
+}
+
+.signal-light.red{
+  background:#ef4444;
+  box-shadow:0 0 20px #ef4444;
+}
+
+.signal-light.green{
+  background:#22c55e;
+  box-shadow:0 0 20px #22c55e;
+}
+
+.signal-light.orange{
+  background:#f59e0b;
+  box-shadow:0 0 20px #f59e0b;
+}
+
+/* ALERTS */
+
+.alert-feed{
+  max-height:240px;
+  overflow-y:auto;
+}
+
+.alert-item{
+  background:rgba(239,68,68,.1);
+  border:1px solid rgba(239,68,68,.4);
+  border-radius:12px;
+  padding:.8rem;
+  margin-bottom:.7rem;
+  font-size:.85rem;
+}
+
+/* ROUTES */
+
+.route-card{
+  background:rgba(255,255,255,.04);
+  border-radius:12px;
+  padding:.9rem;
+  margin-bottom:.8rem;
+  border-left:4px solid #ef4444;
+}
+
+.badge{
+  display:inline-block;
+  padding:.25rem .7rem;
+  border-radius:20px;
+  font-size:.75rem;
+  font-weight:600;
+}
+
+.badge-green{
+  background:rgba(34,197,94,.2);
+  color:#22c55e;
+}
+
+.admin-section{
+  background:var(--surface);
+  border:1px solid var(--glass-border);
+  border-radius:16px;
+  padding:1rem;
+  margin-bottom:1.5rem;
+}
+
+.admin-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.9rem;
+}
+
+.admin-table th,
+.admin-table td{
+  padding:.75rem;
+  border-bottom:1px solid var(--glass-border);
+  text-align:left;
+  vertical-align:top;
+}
+
+.admin-table th{
+  color:var(--text-muted);
+  font-weight:600;
+}
+
+.inline-form{
+  display:inline;
+}
+
+.danger-btn,
+.secondary-btn{
+  border:0;
+  border-radius:8px;
+  padding:.45rem .7rem;
+  cursor:pointer;
+  color:white;
+}
+
+.danger-btn{background:#ef4444;}
+.secondary-btn{background:#475569;}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="layout">
+
+<!-- SIDEBAR -->
+
+<aside class="sidebar">
+
+<div class="brand">
+🚦 Smart ITMS
+</div>
+
+<a href="{{ url_for('admin.dashboard') }}"
+   class="nav-link {{ 'active' if tab|default('dashboard') == 'dashboard' else '' }}">
+📊 Dashboard
+</a>
+
+<a href="{{ url_for('dashboard') }}"
+   class="nav-link">
+📷 CCTV Feed
+</a>
+
+<a href="{{ url_for('analysis_page') }}"
+   class="nav-link">
+📈 Analysis
+</a>
+
+<a href="{{ url_for('admin.live_map') }}"
+   class="nav-link">
+🗺️ Live Map
+</a>
+
+<a href="{{ url_for('admin.users') }}"
+   class="nav-link {{ 'active' if tab|default('dashboard') == 'users' else '' }}">
+👥 Users
+</a>
+
+<a href="{{ url_for('admin.ambulances') }}"
+   class="nav-link {{ 'active' if tab|default('dashboard') == 'ambulances' else '' }}">
+🚑 Ambulances
+</a>
+
+<div style="flex:1"></div>
+
+<a href="{{ url_for('auth.logout') }}"
+   class="nav-link"
+   style="color:#ef4444;">
+🚪 Logout
+</a>
+
+</aside>
+
+<!-- MAIN -->
+
+<main class="main">
+
+<div class="top-row">
+
+<div>
+
+<div class="page-title">
+🚨 Smart Emergency Control Center
+</div>
+
+<div style="color:var(--text-muted);">
+AI-based Green Corridor Monitoring
+</div>
+
+</div>
+
+<div id="clock"></div>
+
+</div>
+
+<!-- STATS -->
+
+<div class="stat-grid">
+
+<div class="stat-card blue">
+<div class="stat-value"
+     id="s-users">—</div>
+<div class="stat-label">
+Registered Drivers
+</div>
+</div>
+
+<div class="stat-card green">
+<div class="stat-value"
+     id="s-amb">—</div>
+<div class="stat-label">
+Active Ambulances
+</div>
+</div>
+
+<div class="stat-card red">
+<div class="stat-value"
+     id="s-alerts">—</div>
+<div class="stat-label">
+Emergency Alerts
+</div>
+</div>
+
+<div class="stat-card orange">
+<div class="stat-value"
+     id="s-routes">—</div>
+<div class="stat-label">
+Active Routes
+</div>
+</div>
+
+</div>
+
+{% if tab|default('dashboard') == 'users' %}
+<section class="admin-section">
+  <div class="panel-title">User Management</div>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Contact</th>
+        <th>Vehicle</th>
+        <th>Role</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in users|default([]) %}
+      <tr>
+        <td>{{ user.full_name or user.username }}</td>
+        <td>{{ user.email or '-' }}<br>{{ user.phone or '-' }}</td>
+        <td>{{ user.vehicle_number or '-' }}<br>{{ user.vehicle_type or '-' }}</td>
+        <td>{{ user.role }}</td>
+        <td>
+          {% if user.role != 'admin' %}
+          <form class="inline-form" method="POST" action="{{ url_for('admin.delete_user', user_id=user.id) }}">
+            <button class="danger-btn" type="submit">Delete</button>
+          </form>
+          {% else %}
+          -
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No users found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% elif tab|default('dashboard') == 'ambulances' %}
+<section class="admin-section">
+  <div class="panel-title">Ambulance Management</div>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Driver</th>
+        <th>Ambulance</th>
+        <th>Hospital</th>
+        <th>Phone</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for amb in ambulances|default([]) %}
+      <tr>
+        <td>{{ amb.driver_name }}</td>
+        <td>{{ amb.ambulance_number }}</td>
+        <td>{{ amb.hospital_name or '-' }}</td>
+        <td>{{ amb.phone or '-' }}</td>
+        <td>{{ 'Active' if amb.is_active else 'Inactive' }}</td>
+        <td>
+          <form class="inline-form" method="POST" action="{{ url_for('admin.toggle_ambulance', driver_id=amb.id) }}">
+            <button class="secondary-btn" type="submit">Toggle</button>
+          </form>
+          <form class="inline-form" method="POST" action="{{ url_for('admin.delete_ambulance', driver_id=amb.id) }}">
+            <button class="danger-btn" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No ambulance drivers found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="admin-section">
+  <div class="panel-title">Current Emergency Routes</div>
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Ambulance</th>
+        <th>Route</th>
+        <th>Started</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for route in active_routes|default([]) %}
+      <tr>
+        <td>{{ route.ambulance_number }}<br>{{ route.driver_name }}</td>
+        <td>{{ route.source }} to {{ route.destination }}</td>
+        <td>{{ route.started_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No active emergency routes.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<!-- GRID -->
+
+<div class="grid">
+
+<!-- MAP -->
+
+<div class="panel">
+
+<div class="panel-title">
+🗺️ Live Emergency Map
+</div>
+
+<div id="admin-map"></div>
+
+</div>
+
+<!-- RIGHT PANELS -->
+
+<div>
+
+<!-- SIGNALS -->
+
+<div class="panel">
+
+<div class="panel-title">
+🚦 Signal Monitor
+</div>
+
+<div class="signal-grid">
+
+{% for i in range(1,5) %}
+
+<div class="signal-card">
+
+<div class="signal-light"
+     id="sig-{{ i }}">
+</div>
+
+<div style="margin-top:.6rem;
+            font-weight:600;">
+
+Lane {{ i }}
+
+</div>
+
+<div id="density-{{ i }}"
+     style="font-size:.75rem;
+            color:var(--text-muted);">
+
+Density: —
+
+</div>
+
+</div>
+
+{% endfor %}
+
+</div>
+
+</div>
+
+<!-- ALERTS -->
+
+<div class="panel">
+
+<div class="panel-title">
+🚨 Emergency Alerts
+</div>
+
+<div class="alert-feed"
+     id="alert-feed">
+
+</div>
+
+</div>
+
+<!-- ACTIVE ROUTES -->
+
+<div class="panel">
+
+<div class="panel-title">
+🚑 Active Routes
+</div>
+
+<div id="route-feed">
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+</main>
+
+</div>
+
+<script>
+
+const socket = io();
+
+socket.emit('join_room', {
+  room:'admin'
+});
+
+// Jammu map
+const map = L.map('admin-map')
+  .setView([32.7266,74.8570],12);
+
+L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {
+    attribution:
+      '© OpenStreetMap'
+  }
+).addTo(map);
+
+// Icons
+const ambulanceIcon = L.divIcon({
+  html:`<div style="
+    font-size:2rem;
+    filter:drop-shadow(
+      0 0 10px red
+    );">🚑</div>`,
+  className:'',
+  iconAnchor:[18,18]
+});
+
+const hospitalIcon = L.divIcon({
+  html:`<div style="
+    font-size:2rem;">
+    🏥
+  </div>`,
+  className:'',
+  iconAnchor:[18,18]
+});
+
+const signalLocations = {
+  1:{lat:32.722156,lng:74.857295,label:'Lane 1 Signal'},
+  2:{lat:32.717817,lng:74.859390,label:'Lane 2 Signal'},
+  3:{lat:32.743338,lng:74.831228,label:'Lane 3 Signal'},
+  4:{lat:32.731692,lng:74.843798,label:'Lane 4 Signal'}
+};
+
+function signalIcon(status,lane){
+  const colors = {
+    red:'#ef4444',
+    green:'#22c55e',
+    orange:'#f59e0b'
+  };
+
+  const activeColor = colors[status] || '#64748b';
+
+  return L.divIcon({
+    html:`
+      <div style="
+        width:34px;
+        padding:4px;
+        border-radius:12px;
+        background:#111827;
+        border:2px solid ${activeColor};
+        box-shadow:0 0 14px ${activeColor};
+        text-align:center;">
+        <div style="font-size:10px;color:white;font-weight:700;margin-bottom:2px;">L${lane}</div>
+        ${['red','orange','green'].map(color => `
+          <div style="
+            width:14px;
+            height:14px;
+            border-radius:50%;
+            margin:3px auto;
+            background:${status === color ? colors[color] : '#374151'};
+            box-shadow:${status === color ? `0 0 10px ${colors[color]}` : 'none'};">
+          </div>
+        `).join('')}
+      </div>`,
+    className:'',
+    iconAnchor:[17,48]
+  });
+}
+
+// Storage
+const ambulanceMarkers = {};
+const coveredRoutes = {};
+const remainingRoutes = {};
+const fullRoutes = {};
+const hospitalMarkers = {};
+const signalMarkers = {};
+const densityOverlays = ITMSDensityOverlay.create(map, signalLocations);
+
+Object.entries(signalLocations).forEach(([lane,point])=>{
+  signalMarkers[lane] = L.marker(
+    [point.lat,point.lng],
+    { icon:signalIcon('red',lane) }
+  ).addTo(map).bindPopup(`${point.label} Signal`);
+});
+
+// Clock
+function tick(){
+
+  document.getElementById(
+    'clock'
+  ).innerText =
+    new Date()
+      .toLocaleTimeString(
+        'en-IN'
+      );
+}
+
+setInterval(tick,1000);
+
+tick();
+
+// Draw route
+async function drawRoute(
+  driverId,
+  startLat,
+  startLng,
+  endLat,
+  endLng
+){
+
+  const url =
+   `https://router.project-osrm.org/route/v1/driving/`
+   +
+   `${startLng},${startLat};`
+   +
+   `${endLng},${endLat}`
+   +
+   `?overview=full&geometries=geojson`;
+
+  let coords = null;
+
+  try{
+    const response =
+      await fetch(url);
+
+    const data =
+      await response.json();
+
+    if(
+      data.routes &&
+      data.routes.length
+    ){
+      coords =
+        data.routes[0]
+        .geometry
+        .coordinates
+        .map(
+          c => [c[1],c[0]]
+        );
+    }
+  }catch(err){
+    console.log('Route service unavailable:', err);
+  }
+
+  if(!coords){
+    coords = [
+      [Number(startLat),Number(startLng)],
+      [Number(endLat),Number(endLng)]
+    ];
+  }
+
+  if(remainingRoutes[driverId])
+    map.removeLayer(remainingRoutes[driverId]);
+
+  if(coveredRoutes[driverId])
+    map.removeLayer(coveredRoutes[driverId]);
+
+  if(hospitalMarkers[driverId])
+    map.removeLayer(hospitalMarkers[driverId]);
+
+  fullRoutes[driverId] =
+    coords;
+
+  remainingRoutes[driverId] =
+    L.polyline(coords,{
+      color:'red',
+      weight:7
+    }).addTo(map);
+
+  const lastPoint =
+    coords[coords.length-1];
+
+  hospitalMarkers[driverId] = L.marker(lastPoint,{
+    icon:hospitalIcon
+  }).addTo(map);
+}
+
+function upsertRouteCard(data){
+  const feed = document.getElementById('route-feed');
+  let card = document.getElementById(`route-${data.driver_id}`);
+
+  if(!card){
+    card = document.createElement('div');
+    card.className = 'route-card';
+    card.id = `route-${data.driver_id}`;
+    feed.prepend(card);
+  }
+
+  const label = data.ambulance_number || `Ambulance ${data.driver_id}`;
+  const routeText = data.source && data.destination
+    ? `${data.source} to ${data.destination}`
+    : `Live GPS: ${Number(data.lat).toFixed(4)}, ${Number(data.lng).toFixed(4)}`;
+
+  card.innerHTML = `
+    <div style="font-weight:700;margin-bottom:.3rem;">${label}</div>
+    <div style="font-size:.82rem;color:var(--text-muted);">${routeText}</div>
+    <div style="margin-top:.5rem;"><span class="badge badge-green">ACTIVE</span></div>
+  `;
+}
+
+async function loadActiveRoutes(){
+  const response = await fetch('/ambulance/api/active_routes');
+  const routes = await response.json();
+
+  routes.forEach(async route => {
+    if(!route.lat || !route.lng || !route.destination_lat || !route.destination_lng) return;
+
+    if(!ambulanceMarkers[route.driver_id]){
+      ambulanceMarkers[route.driver_id] = L.marker([route.lat, route.lng], {
+        icon:ambulanceIcon
+      }).addTo(map);
+    }
+
+    await drawRoute(
+      route.driver_id,
+      route.lat,
+      route.lng,
+      route.destination_lat,
+      route.destination_lng
+    );
+
+    updateProgress(route.driver_id, route.lat, route.lng);
+    upsertRouteCard(route);
+  });
+}
+
+// Update route progress
+function updateProgress(
+  driverId,
+  lat,
+  lng
+){
+
+  const route =
+    fullRoutes[driverId];
+
+  if(!route) return;
+
+  let closestIndex = 0;
+  let minDist = Infinity;
+
+  route.forEach((p,i)=>{
+
+    const d = Math.hypot(
+      p[0]-lat,
+      p[1]-lng
+    );
+
+    if(d<minDist){
+      minDist=d;
+      closestIndex=i;
+    }
+
+  });
+
+  const covered =
+    route.slice(0,closestIndex);
+
+  const remaining =
+    route.slice(closestIndex);
+
+  if(coveredRoutes[driverId])
+    map.removeLayer(
+      coveredRoutes[driverId]
+    );
+
+  if(remainingRoutes[driverId])
+    map.removeLayer(
+      remainingRoutes[driverId]
+    );
+
+  coveredRoutes[driverId] =
+    L.polyline(covered,{
+      color:'limegreen',
+      weight:7
+    }).addTo(map);
+
+  remainingRoutes[driverId] =
+    L.polyline(remaining,{
+      color:'red',
+      weight:7
+    }).addTo(map);
+}
+
+// Ambulance live updates
+socket.on(
+  'ambulance_location',
+
+  async data => {
+
+    const {
+      driver_id,
+      lat,
+      lng,
+      destination_lat,
+      destination_lng
+    } = data;
+
+    if(
+      !ambulanceMarkers[
+        driver_id
+      ]
+    ){
+
+      ambulanceMarkers[
+        driver_id
+      ] = L.marker(
+        [lat,lng],
+        {
+          icon:ambulanceIcon
+        }
+      ).addTo(map);
+
+      if(
+        destination_lat &&
+        destination_lng
+      ){
+
+        await drawRoute(
+          driver_id,
+          lat,
+          lng,
+          destination_lat,
+          destination_lng
+        );
+      }
+
+    }else{
+
+      ambulanceMarkers[
+        driver_id
+      ].setLatLng(
+        [lat,lng]
+      );
+    }
+
+    updateProgress(
+      driver_id,
+      lat,
+      lng
+    );
+  }
+);
+
+// Signal updates
+socket.on(
+  'state_update',
+
+  data => {
+
+    const state =
+      data.traffic_state;
+
+    for(
+      let i=1;
+      i<=4;
+      i++
+    ){
+
+      if(!state[i]) continue;
+
+      const sig =
+        document.getElementById(
+          `sig-${i}`
+        );
+
+      sig.className =
+       `signal-light `
+       +
+       state[i].status;
+
+      if(signalMarkers[i]){
+        signalMarkers[i].setIcon(
+          signalIcon(state[i].status,i)
+        );
+      }
+
+      document.getElementById(
+        `density-${i}`
+      ).innerText =
+       `Density: `
+       +
+       state[i].density;
+    }
+
+    ITMSDensityOverlay.update(
+      densityOverlays,
+      signalLocations,
+      state
+    );
+  }
+);
+
+// Emergency alerts
+socket.on(
+  'ambulance_alert',
+
+  data => {
+
+    const feed =
+      document.getElementById(
+        'alert-feed'
+      );
+
+    const div =
+      document.createElement(
+        'div'
+      );
+
+    div.className =
+      'alert-item';
+
+    div.innerHTML =
+      `
+      <b>🚨 Emergency</b><br>
+      ${data.message}<br>
+      <small>
+        ${
+          new Date()
+          .toLocaleTimeString()
+        }
+      </small>
+      `;
+
+    feed.prepend(div);
+
+    if(
+      feed.children.length > 8
+    ){
+      feed.lastChild.remove();
+    }
+  }
+);
+
+// Active routes UI
+socket.on(
+  'ambulance_location',
+
+  data => {
+
+    const feed =
+      document.getElementById(
+        'route-feed'
+      );
+
+    let card =
+      document.getElementById(
+        `route-${data.driver_id}`
+      );
+
+    if(!card){
+
+      card =
+        document.createElement(
+          'div'
+        );
+
+      card.className =
+        'route-card';
+
+      card.id =
+        `route-${data.driver_id}`;
+
+      feed.prepend(card);
+    }
+
+    card.innerHTML =
+      `
+      <div style="
+        font-weight:700;
+        margin-bottom:.3rem;">
+        🚑 Ambulance
+        ${data.driver_id}
+      </div>
+
+      <div style="
+        font-size:.82rem;
+        color:var(--text-muted);">
+
+        Live GPS:
+        ${data.lat?.toFixed(4)},
+        ${data.lng?.toFixed(4)}
+
+      </div>
+
+      <div style="
+        margin-top:.5rem;">
+
+        <span class="
+          badge badge-green">
+
+          ACTIVE
+
+        </span>
+
+      </div>
+      `;
+  }
+);
+
+// Stats
+fetch('/admin/api/stats')
+
+.then(r=>r.json())
+
+.then(d=>{
+
+  document.getElementById(
+    's-users'
+  ).textContent =
+    d.public_users ?? '—';
+
+  document.getElementById(
+    's-amb'
+  ).textContent =
+    d.ambulances ?? '—';
+
+  document.getElementById(
+    's-alerts'
+  ).textContent =
+    d.recent_amb_alerts ?? '—';
+
+  document.getElementById(
+    's-routes'
+  ).textContent =
+    d.active_routes ?? '—';
+});
+
+socket.on('ambulance_location', data => {
+  upsertRouteCard(data);
+});
+
+loadActiveRoutes();
+
+</script>
+
+</body>
+</html>

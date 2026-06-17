@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+venv/
+ENV/
+env/
+venv.bak/
+env.bak/
+
+# Database
+*.db
+*.sqlite3
+
+# Uploads / video directories (keep directories but ignore video files)
+Code/uploads/*
+!Code/uploads/.gitkeep
+Code/videos/*
+!Code/videos/.gitkeep
+uploads/*
+!uploads/.gitkeep
+videos/*
+!videos/.gitkeep
+
+# Testing / samples (optional - ignore sample videos to keep repo light)
+Code/Video Samples/
+Video Samples/
+
+# IDE / Editor folders
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+.DS_Store
+Thumbs.db

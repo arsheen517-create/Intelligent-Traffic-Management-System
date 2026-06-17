@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Public Traffic Dashboard · ITMS</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="{{ url_for('static', filename='js/traffic_density_overlay.js') }}"></script>
+
+  <style>
+
+    body {
+      font-family:'Inter', sans-serif;
+    }
+
+    .top-bar {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:1rem 1.5rem;
+      background:var(--surface);
+      border-bottom:1px solid var(--glass-border);
+    }
+
+    .logo {
+      font-weight:700;
+      font-size:1.1rem;
+    }
+
+    .main {
+      padding:1.5rem;
+      max-width:1300px;
+      margin:auto;
+    }
+
+    .hero-card {
+      background:var(--gradient-primary);
+      border-radius:14px;
+      padding:2rem;
+      margin-bottom:1.5rem;
+      position:relative;
+      overflow:hidden;
+    }
+
+    .signal-grid {
+      display:grid;
+      grid-template-columns:repeat(4,1fr);
+      gap:1rem;
+      margin-bottom:1.5rem;
+    }
+
+    .signal-card {
+      background:var(--surface);
+      border:1px solid var(--glass-border);
+      border-radius:14px;
+      padding:1rem;
+      text-align:center;
+    }
+
+    .signal-light {
+      width:50px;
+      height:50px;
+      border-radius:50%;
+      margin:0 auto .8rem;
+    }
+
+    .signal-light.red {
+      background:#ef4444;
+      box-shadow:0 0 20px #ef4444;
+    }
+
+    .signal-light.green {
+      background:#22c55e;
+      box-shadow:0 0 20px #22c55e;
+    }
+
+    .signal-light.orange {
+      background:#f59e0b;
+      box-shadow:0 0 20px #f59e0b;
+    }
+
+    .signal-light.idle {
+      background:#333;
+    }
+
+    #public-map {
+      width:100%;
+      height:600px;
+      border-radius:16px;
+      overflow:hidden;
+      margin-top:1.5rem;
+      border:1px solid rgba(255,255,255,.1);
+    }
+
+    .emergency-banner {
+      display:none;
+      background:rgba(239,68,68,.15);
+      border:1px solid rgba(239,68,68,.5);
+      border-radius:14px;
+      padding:1rem;
+      margin-bottom:1rem;
+    }
+
+    .emergency-banner.visible {
+      display:flex;
+      align-items:center;
+      gap:1rem;
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+<header class="top-bar">
+
+  <div class="logo">🚦 ITMS Public Dashboard</div>
+
+  <nav style="display:flex; gap:1rem;">
+
+    <a href="{{ url_for('public.live_map') }}">
+      Live Map
+    </a>
+
+    <a href="{{ url_for('auth.logout') }}">
+      Logout
+    </a>
+
+  </nav>
+
+</header>
+
+<main class="main">
+
+  <!-- Hero -->
+  <div class="hero-card">
+
+    <h2>
+      👋 Hello, {{ full_name }}
+    </h2>
+
+    <p>
+      Live ambulance and emergency traffic monitoring
+    </p>
+
+  </div>
+
+  <!-- Emergency Banner -->
+  <div class="emergency-banner" id="em-banner">
+
+    <div style="font-size:2rem;">🚑</div>
+
+    <div>
+
+      <div style="font-weight:700;">
+        Emergency Vehicle Approaching
+      </div>
+
+      <div id="em-msg">
+        Please avoid highlighted route.
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Signals -->
+  <div class="signal-grid">
+
+    {% for i in range(1,5) %}
+
+    <div class="signal-card">
+
+      <div class="signal-light idle" id="sig-{{ i }}"></div>
+
+      <div style="font-weight:600;">
+        Lane {{ i }}
+      </div>
+
+      <div id="density-{{ i }}"
+           style="font-size:.8rem; color:#9ca3af;">
+        Loading...
+      </div>
+
+    </div>
+
+    {% endfor %}
+
+  </div>
+
+  <!-- Live Map -->
+  <div id="public-map"></div>
+
+</main>
+
+<script>
+
+const socket = io();
+
+socket.emit('join_room', {
+  room:'public'
+});
+
+// Jammu center
+const map = L.map('public-map')
+  .setView([32.7266,74.8570],12);
+
+L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {
+    attribution:
+      '© OpenStreetMap contributors'
+  }
+).addTo(map);
+
+// User marker
+let userMarker = null;
+
+let userLat = null;
+let userLng = null;
+
+// Ambulance systems
+const ambulanceMarkers = {};
+const coveredRoutes = {};
+const remainingRoutes = {};
+const fullRoutes = {};
+const hospitalMarkers = {};
+
+const ambulanceIcon = L.divIcon({
+
+  html:`
+  <div style="
+    font-size:2rem;
+    filter:drop-shadow(
+      0 0 10px red
+    );">
+
+    🚑
+
+  </div>`,
+
+  className:'',
+  iconAnchor:[18,18]
+});
+
+const hospitalIcon = L.divIcon({
+
+  html:`
+  <div style="
+    font-size:2rem;">
+
+    🏥
+
+  </div>`,
+
+  className:'',
+  iconAnchor:[18,18]
+});
+
+const signalLocations = {
+  1:{lat:32.722156,lng:74.857295,label:'Lane 1 Signal'},
+  2:{lat:32.717817,lng:74.859390,label:'Lane 2 Signal'},
+  3:{lat:32.743338,lng:74.831228,label:'Lane 3 Signal'},
+  4:{lat:32.731692,lng:74.843798,label:'Lane 4 Signal'}
+};
+
+function signalIcon(status,lane){
+  const colors = {
+    red:'#ef4444',
+    green:'#22c55e',
+    orange:'#f59e0b'
+  };
+
+  const activeColor = colors[status] || '#64748b';
+
+  return L.divIcon({
+    html:`
+      <div style="
+        width:34px;
+        padding:4px;
+        border-radius:12px;
+        background:#111827;
+        border:2px solid ${activeColor};
+        box-shadow:0 0 14px ${activeColor};
+        text-align:center;">
+        <div style="font-size:10px;color:white;font-weight:700;margin-bottom:2px;">L${lane}</div>
+        ${['red','orange','green'].map(color => `
+          <div style="
+            width:14px;
+            height:14px;
+            border-radius:50%;
+            margin:3px auto;
+            background:${status === color ? colors[color] : '#374151'};
+            box-shadow:${status === color ? `0 0 10px ${colors[color]}` : 'none'};">
+          </div>
+        `).join('')}
+      </div>`,
+    className:'',
+    iconAnchor:[17,48]
+  });
+}
+
+const signalMarkers = {};
+const densityOverlays = ITMSDensityOverlay.create(map, signalLocations);
+
+Object.entries(signalLocations).forEach(([lane,point])=>{
+  signalMarkers[lane] = L.marker(
+    [point.lat,point.lng],
+    { icon:signalIcon('red',lane) }
+  ).addTo(map).bindPopup(`${point.label} Signal`);
+});
+
+// GPS tracking
+function startUserTracking(){
+
+  if(!navigator.geolocation){
+
+    alert(
+      'GPS not supported'
+    );
+
+    return;
+  }
+
+  navigator.geolocation.watchPosition(
+
+    pos => {
+
+      userLat =
+        pos.coords.latitude;
+
+      userLng =
+        pos.coords.longitude;
+
+      // create marker
+      if(!userMarker){
+
+        userMarker =
+          L.marker(
+            [userLat,userLng]
+          ).addTo(map)
+           .bindPopup(
+             '📍 Your Location'
+           );
+
+        map.setView(
+          [userLat,userLng],
+          14
+        );
+
+      }else{
+
+        userMarker.setLatLng(
+          [userLat,userLng]
+        );
+      }
+
+    },
+
+    err => {
+
+      console.log(
+        'GPS Error:',
+        err
+      );
+
+      alert(
+        'Please allow GPS access.'
+      );
+
+    },
+
+    {
+      enableHighAccuracy:true,
+      maximumAge:1000,
+      timeout:10000
+    }
+  );
+}
+
+// Start GPS immediately
+window.addEventListener(
+  'load',
+  startUserTracking
+);
+
+// Emergency banner
+function showEmergencyBanner(
+  msg
+){
+
+  const banner =
+    document.getElementById(
+      'em-banner'
+    );
+
+  document.getElementById(
+    'em-msg'
+  ).innerText = msg;
+
+  banner.classList.add(
+    'visible'
+  );
+}
+
+function hideEmergencyBanner(){
+
+  const banner =
+    document.getElementById(
+      'em-banner'
+    );
+
+  banner.classList.remove(
+    'visible'
+  );
+}
+
+// Traffic updates
+socket.on(
+  'state_update',
+
+  data => {
+
+    const state =
+      data.traffic_state;
+
+    let ambulanceDetected =
+      false;
+
+    for(
+      let i=1;
+      i<=4;
+      i++
+    ){
+
+      if(!state[i])
+        continue;
+
+      const s = state[i];
+
+      const signal =
+        document.getElementById(
+          `sig-${i}`
+        );
+
+      signal.className =
+        `signal-light ${s.status}`;
+
+      document.getElementById(
+        `density-${i}`
+      ).innerText =
+        `Vehicles: ${s.density}`;
+
+      if(signalMarkers[i]){
+        signalMarkers[i].setIcon(
+          signalIcon(s.status,i)
+        );
+      }
+
+      if(s.ambulance)
+        ambulanceDetected = true;
+    }
+
+    ITMSDensityOverlay.update(
+      densityOverlays,
+      signalLocations,
+      state
+    );
+
+    if(ambulanceDetected){
+
+      showEmergencyBanner(
+        '🚑 Emergency corridor active nearby.'
+      );
+
+    }else{
+
+      hideEmergencyBanner();
+    }
+  }
+);
+
+// Draw route
+async function drawFullRoute(
+  driverId,
+  startLat,
+  startLng,
+  endLat,
+  endLng
+){
+
+  const url =
+   `https://router.project-osrm.org/route/v1/driving/`
+   +
+   `${startLng},${startLat};`
+   +
+   `${endLng},${endLat}`
+   +
+   `?overview=full&geometries=geojson`;
+
+  let coords = null;
+
+  try{
+    const response =
+      await fetch(url);
+
+    const data =
+      await response.json();
+
+    if(
+      data.routes &&
+      data.routes.length
+    ){
+      coords =
+        data.routes[0]
+        .geometry
+        .coordinates
+        .map(
+          c => [c[1],c[0]]
+        );
+    }
+  }catch(err){
+    console.log('Route service unavailable:', err);
+  }
+
+  if(!coords){
+    coords = [
+      [Number(startLat),Number(startLng)],
+      [Number(endLat),Number(endLng)]
+    ];
+  }
+
+  if(remainingRoutes[driverId])
+    map.removeLayer(remainingRoutes[driverId]);
+
+  if(coveredRoutes[driverId])
+    map.removeLayer(coveredRoutes[driverId]);
+
+  if(hospitalMarkers[driverId])
+    map.removeLayer(hospitalMarkers[driverId]);
+
+  fullRoutes[driverId] =
+    coords;
+
+  // Remaining route
+  remainingRoutes[driverId] =
+    L.polyline(
+      coords,
+      {
+        color:'red',
+        weight:7
+      }
+    ).addTo(map);
+
+  // Hospital marker
+  const lastPoint =
+    coords[
+      coords.length - 1
+    ];
+
+  hospitalMarkers[driverId] = L.marker(
+    lastPoint,
+    {
+      icon:hospitalIcon
+    }
+  ).addTo(map)
+   .bindPopup(
+     '🏥 Hospital'
+   );
+}
+
+async function loadActiveRoutes(){
+  const response = await fetch('/ambulance/api/active_routes');
+  const routes = await response.json();
+
+  routes.forEach(async route => {
+    if(!route.lat || !route.lng || !route.destination_lat || !route.destination_lng) return;
+
+    if(!ambulanceMarkers[route.driver_id]){
+      ambulanceMarkers[route.driver_id] =
+        L.marker([route.lat, route.lng], {
+          icon:ambulanceIcon
+        }).addTo(map)
+         .bindPopup(`Ambulance ${route.ambulance_number || route.driver_id}`);
+    }
+
+    await drawFullRoute(
+      route.driver_id,
+      route.lat,
+      route.lng,
+      route.destination_lat,
+      route.destination_lng
+    );
+
+    updateRouteProgress(route.driver_id, route.lat, route.lng);
+  });
+}
+
+// Route progress
+function updateRouteProgress(
+  driverId,
+  lat,
+  lng
+){
+
+  const route =
+    fullRoutes[driverId];
+
+  if(!route)
+    return;
+
+  let closestIndex = 0;
+
+  let minDist = Infinity;
+
+  route.forEach(
+    (point,index)=>{
+
+      const dist =
+        Math.hypot(
+          point[0]-lat,
+          point[1]-lng
+        );
+
+      if(dist < minDist){
+
+        minDist = dist;
+
+        closestIndex = index;
+      }
+    }
+  );
+
+  const covered =
+    route.slice(
+      0,
+      closestIndex
+    );
+
+  const remaining =
+    route.slice(
+      closestIndex
+    );
+
+  if(coveredRoutes[driverId])
+    map.removeLayer(
+      coveredRoutes[driverId]
+    );
+
+  if(remainingRoutes[driverId])
+    map.removeLayer(
+      remainingRoutes[driverId]
+    );
+
+  // Covered
+  coveredRoutes[driverId] =
+    L.polyline(
+      covered,
+      {
+        color:'limegreen',
+        weight:7
+      }
+    ).addTo(map);
+
+  // Remaining
+  remainingRoutes[driverId] =
+    L.polyline(
+      remaining,
+      {
+        color:'red',
+        weight:7
+      }
+    ).addTo(map);
+
+  // User proximity alert
+  if(
+    userLat &&
+    userLng
+  ){
+
+    const distance =
+      Math.hypot(
+        userLat - lat,
+        userLng - lng
+      );
+
+    if(distance < 0.01){
+
+      showEmergencyBanner(
+        '🚑 Ambulance approaching your area. Please clear the route.'
+      );
+    }
+  }
+}
+
+// Live ambulance updates
+socket.on(
+  'ambulance_location',
+
+  async data => {
+
+    const {
+      driver_id,
+      lat,
+      lng,
+      destination_lat,
+      destination_lng
+    } = data;
+
+    // Create ambulance marker
+    if(
+      !ambulanceMarkers[
+        driver_id
+      ]
+    ){
+
+      ambulanceMarkers[
+        driver_id
+      ] =
+        L.marker(
+          [lat,lng],
+          {
+            icon:ambulanceIcon
+          }
+        ).addTo(map)
+         .bindPopup(
+           `🚑 Ambulance ${driver_id}`
+         );
+
+      // Draw route once
+      if(
+        destination_lat &&
+        destination_lng
+      ){
+
+        await drawFullRoute(
+
+          driver_id,
+
+          lat,
+          lng,
+
+          destination_lat,
+          destination_lng
+        );
+      }
+
+    }else{
+
+      ambulanceMarkers[
+        driver_id
+      ].setLatLng(
+        [lat,lng]
+      );
+    }
+
+    updateRouteProgress(
+
+      driver_id,
+
+      lat,
+      lng
+    );
+  }
+);
+
+loadActiveRoutes();
+
+</script>
+
+</body>
+</html>

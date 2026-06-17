@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signal Monitor · ITMS</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    .top-bar { display:flex; justify-content:space-between; align-items:center;
+      padding:1rem 1.5rem; background:var(--surface); border-bottom:1px solid var(--glass-border); }
+    .main { padding:1.5rem; max-width:1100px; margin:0 auto; }
+    .monitor-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:1.5rem; margin-bottom:1.5rem; }
+    .lane-monitor { background:var(--surface); border:1px solid var(--glass-border);
+      border-radius:var(--radius); padding:1.2rem; }
+    .lane-monitor.ambulance { border-color:rgba(239,68,68,.6); background:rgba(239,68,68,.05); }
+    .lane-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
+    .lane-name { font-size:1.1rem; font-weight:700; }
+    /* Traffic light widget */
+    .tl-widget { display:flex; gap:.6rem; align-items:center; margin-bottom:1rem; }
+    .tl-box { background:#1a1a2e; border-radius:8px; padding:.5rem;
+      display:flex; flex-direction:column; gap:.4rem; align-items:center; }
+    .tl-light { width:30px; height:30px; border-radius:50%; transition:all .3s; }
+    .tl-light.r { background:#330000; }
+    .tl-light.o { background:#2a1a00; }
+    .tl-light.g { background:#003300; }
+    .tl-light.r.on { background:#ef4444; box-shadow:0 0 15px #ef4444; }
+    .tl-light.o.on { background:#f59e0b; box-shadow:0 0 15px #f59e0b; }
+    .tl-light.g.on { background:#22c55e; box-shadow:0 0 15px #22c55e; }
+    .lane-stats { display:flex; gap:.8rem; font-size:.82rem; flex-wrap:wrap; margin-bottom:.8rem; }
+    .stat-chip { background:rgba(255,255,255,.06); border-radius:20px; padding:.25rem .7rem; }
+    /* Manual override buttons */
+    .override-row { display:flex; gap:.5rem; }
+    .override-btn { flex:1; padding:.45rem; border-radius:6px; border:none; cursor:pointer;
+      font-weight:600; font-size:.8rem; transition:all .2s; opacity:.5; }
+    .override-btn:hover { opacity:1; transform:scale(1.02); }
+    .override-btn.red    { background:rgba(239,68,68,.2);   color:#ef4444;   border:1px solid #ef4444; }
+    .override-btn.green  { background:rgba(34,197,94,.2);   color:#22c55e;   border:1px solid #22c55e; }
+    .override-btn.orange { background:rgba(245,158,11,.2);  color:#f59e0b;   border:1px solid #f59e0b; }
+    /* Event log */
+    .event-log { background:var(--surface); border:1px solid var(--glass-border);
+      border-radius:var(--radius); padding:1rem; max-height:260px; overflow-y:auto; }
+    .event-row { display:flex; gap:.6rem; align-items:flex-start; padding:.4rem 0;
+      border-bottom:1px solid rgba(255,255,255,.04); font-size:.82rem; }
+    .event-row:last-child { border:0; }
+    .event-time { color:var(--text-muted); flex-shrink:0; }
+  </style>
+</head>
+<body>
+  <header class="top-bar">
+    <div style="font-weight:700; font-size:1.1rem; background:var(--gradient-primary);
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent;">🚦 Signal Monitor</div>
+    <nav style="display:flex; gap:1rem;">
+      <a href="{{ url_for('admin.dashboard') }}" style="color:var(--text-muted); font-size:.9rem; text-decoration:none;">← Dashboard</a>
+      <a href="{{ url_for('admin.live_map') }}" style="color:var(--text-muted); font-size:.9rem; text-decoration:none;">🗺️ Map</a>
+    </nav>
+  </header>
+
+  <main class="main">
+    <div style="margin-bottom:1.2rem; color:var(--text-muted); font-size:.85rem;">
+      ⚡ Manual overrides lock the signal for <strong>30 seconds</strong> then resume automatic control.
+    </div>
+
+    <div class="monitor-grid">
+      {% for i in range(1,5) %}
+      <div class="lane-monitor" id="lane-card-{{ i }}">
+        <div class="lane-top">
+          <div class="lane-name">Lane {{ i }}</div>
+          <span id="amb-badge-{{ i }}" style="display:none; background:rgba(239,68,68,.2);
+            color:#ef4444; padding:.2rem .6rem; border-radius:20px; font-size:.75rem; font-weight:700;">
+            🚨 AMBULANCE
+          </span>
+        </div>
+
+        <!-- Traffic light widget -->
+        <div class="tl-widget">
+          <div class="tl-box">
+            <div class="tl-light r" id="tl-{{ i }}-r"></div>
+            <div class="tl-light o" id="tl-{{ i }}-o"></div>
+            <div class="tl-light g" id="tl-{{ i }}-g"></div>
+          </div>
+          <div>
+            <div style="font-size:1.2rem; font-weight:700;" id="sig-text-{{ i }}">—</div>
+            <div style="font-size:.75rem; color:var(--text-muted);" id="timer-text-{{ i }}"></div>
+          </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="lane-stats">
+          <div class="stat-chip">Vehicles: <strong id="density-{{ i }}">0</strong></div>
+        </div>
+
+        <!-- Manual override -->
+        <div class="override-row">
+          <button class="override-btn red"    onclick="forceSignal({{ i }}, 'red')">🔴 Force Red</button>
+          <button class="override-btn orange"  onclick="forceSignal({{ i }}, 'orange')">🟡 Force Amber</button>
+          <button class="override-btn green"  onclick="forceSignal({{ i }}, 'green')">🟢 Force Green</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Event log -->
+    <div style="font-weight:600; margin-bottom:.7rem;">📋 Event Log</div>
+    <div class="event-log" id="event-log">
+      <div class="event-row">
+        <span class="event-time" id="start-time"></span>
+        <span>🟢 Signal monitor started</span>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    document.getElementById('start-time').textContent = new Date().toLocaleTimeString();
+
+    const socket = io();
+    socket.emit('join_room', { room: 'admin' });
+
+    function setLight(lane, status) {
+      ['r','o','g'].forEach(c => {
+        document.getElementById(`tl-${lane}-${c}`).classList.remove('on');
+      });
+      const map = { red:'r', orange:'o', green:'g' };
+      const key = map[status];
+      if (key) document.getElementById(`tl-${lane}-${key}`).classList.add('on');
+    }
+
+    socket.on('state_update', data => {
+      const state = data.traffic_state;
+      for (let i = 1; i <= 4; i++) {
+        if (!state[i]) continue;
+        const { status, density, ambulance } = state[i];
+        setLight(i, status);
+
+        const txt = document.getElementById(`sig-text-${i}`);
+        if (txt) { txt.textContent = status.toUpperCase();
+          txt.style.color = status==='green'?'#22c55e':status==='orange'?'#f59e0b':'#ef4444'; }
+
+        const tr = document.getElementById(`timer-text-${i}`);
+        if (tr && state[i].time_remaining !== undefined)
+          tr.textContent = `${Math.round(state[i].time_remaining)}s remaining`;
+
+        document.getElementById(`density-${i}`).textContent = density;
+
+        const card = document.getElementById(`lane-card-${i}`);
+        const badge = document.getElementById(`amb-badge-${i}`);
+        if (ambulance) {
+          card.classList.add('ambulance');
+          badge.style.display = 'inline-block';
+        } else {
+          card.classList.remove('ambulance');
+          badge.style.display = 'none';
+        }
+      }
+    });
+
+    socket.on('signal_forced', data => {
+      addLog(`🔧 Manual override → Lane ${data.lane_id} forced to ${data.status.toUpperCase()}`);
+    });
+
+    function forceSignal(laneId, status) {
+      socket.emit('force_signal', { lane_id: laneId, status });
+      addLog(`⚡ You forced Lane ${laneId} → ${status.toUpperCase()}`);
+    }
+
+    function addLog(msg) {
+      const log = document.getElementById('event-log');
+      const row = document.createElement('div');
+      row.className = 'event-row';
+      row.innerHTML = `<span class="event-time">${new Date().toLocaleTimeString()}</span><span>${msg}</span>`;
+      log.prepend(row);
+      if (log.children.length > 50) log.lastChild.remove();
+    }
+  </script>
+</body>
+</html>

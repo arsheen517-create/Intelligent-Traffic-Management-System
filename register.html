@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register · ITMS</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <style>
+    body { display:flex; align-items:center; justify-content:center; min-height:100vh; padding: 2rem 1rem; }
+    .reg-wrap { width:100%; max-width:500px; }
+    .brand { text-align:center; margin-bottom:1.5rem; }
+    .brand h1 { font-size:1.5rem; font-weight:700; background:var(--gradient-primary);
+      -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin:0; }
+    .role-tabs { display:flex; gap:.5rem; margin-bottom:1.5rem; }
+    .role-tab { flex:1; padding:.6rem; text-align:center;
+      border:1px solid var(--glass-border); background:transparent;
+      border-radius:var(--radius); color:var(--text-muted);
+      cursor:pointer; transition:all .2s; font-size:.85rem; }
+    .role-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+    .role-panel { display:none; }
+    .role-panel.active { display:block; }
+    .form-row { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+  </style>
+</head>
+<body>
+  <div class="bg-blob blob-1"></div>
+  <div class="bg-blob blob-2"></div>
+
+  <div class="reg-wrap">
+    <div class="brand">
+      <span style="font-size:2.5rem">🚦</span>
+      <h1>Create Account · ITMS</h1>
+    </div>
+
+    <div class="glass-card">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}{% for cat, msg in messages %}
+          <div class="alert alert-{{ cat }}">{{ msg }}</div>
+        {% endfor %}{% endif %}
+      {% endwith %}
+
+      <div class="role-tabs">
+        <button class="role-tab active" data-role="public" onclick="switchRole('public')">🚗 Vehicle Owner</button>
+        <button class="role-tab" data-role="ambulance" onclick="switchRole('ambulance')">🚑 Ambulance Driver</button>
+      </div>
+
+      <!-- Public User Registration -->
+      <div class="role-panel active" id="panel-public">
+        <form method="POST" action="{{ url_for('auth.register') }}">
+          <input type="hidden" name="role" value="public">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Full Name</label>
+              <input type="text" name="full_name" placeholder="Rajesh Kumar" required>
+            </div>
+            <div class="form-group">
+              <label>Phone Number</label>
+              <input type="tel" name="phone" placeholder="9876543210" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Email Address</label>
+            <input type="email" name="email" placeholder="rajesh@example.com" required>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Vehicle Number</label>
+              <input type="text" name="vehicle_number" placeholder="DL 01 AB 1234" required>
+            </div>
+            <div class="form-group">
+              <label>Vehicle Type</label>
+              <select name="vehicle_type" required>
+                <option value="">Select…</option>
+                <option>Car</option>
+                <option>Motorcycle</option>
+                <option>Bus</option>
+                <option>Truck</option>
+                <option>Auto Rickshaw</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" name="password" placeholder="Min 8 characters" required minlength="8">
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">Register as Driver</button>
+        </form>
+      </div>
+
+      <!-- Ambulance Driver Registration -->
+      <div class="role-panel" id="panel-ambulance">
+        <form method="POST" action="{{ url_for('auth.register') }}">
+          <input type="hidden" name="role" value="ambulance">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Driver Name</label>
+              <input type="text" name="driver_name" placeholder="Arjun Singh" required>
+            </div>
+            <div class="form-group">
+              <label>Ambulance Number</label>
+              <input type="text" name="ambulance_number" placeholder="AMB-DL-001" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Hospital / Organisation</label>
+            <input type="text" name="hospital_name" placeholder="AIIMS Delhi" required>
+          </div>
+          <div class="form-group">
+            <label>Phone Number</label>
+            <input type="tel" name="phone" placeholder="9876543210" required>
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" name="password" placeholder="Min 8 characters" required minlength="8">
+          </div>
+          <button type="submit" class="btn btn-danger btn-full">🚑 Register as Ambulance Driver</button>
+        </form>
+      </div>
+
+      <p style="text-align:center; margin-top:1rem; color:var(--text-muted); font-size:.85rem;">
+        Already have an account?
+        <a href="{{ url_for('auth.login') }}" style="color:var(--accent);">Sign in</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    function switchRole(role) {
+      document.querySelectorAll('.role-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.role-panel').forEach(p => p.classList.remove('active'));
+      document.querySelector(`[data-role="${role}"]`).classList.add('active');
+      document.getElementById(`panel-${role}`).classList.add('active');
+    }
+  </script>
+</body>
+</html>

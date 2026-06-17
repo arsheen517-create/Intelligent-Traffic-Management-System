@@ -1,0 +1,2687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width,
+               initial-scale=1.0">
+
+<title>
+  Ambulance Dashboard · ITMS
+</title>
+
+<link
+ href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap"
+ rel="stylesheet">
+
+<link
+ rel="stylesheet"
+ href="{{ url_for('static',
+ filename='css/main.css') }}">
+
+<link
+ rel="stylesheet"
+ href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<script
+ src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+</script>
+
+<script
+ src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js">
+</script>
+
+<script
+ src="{{ url_for('static', filename='js/traffic_density_overlay.js') }}">
+</script>
+
+<style>
+
+.layout{
+  display:flex;
+  min-height:100vh;
+}
+
+.side-panel{
+  width:320px;
+  background:var(--surface);
+  border-right:1px solid var(--glass-border);
+  padding:1.2rem;
+  overflow-y:auto;
+}
+
+.map-wrap{
+  flex:1;
+  position:relative;
+}
+
+#amb-map{
+  width:100%;
+  height:100vh;
+}
+
+.glass-card{
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:14px;
+  padding:1rem;
+  margin-bottom:1rem;
+}
+
+.section-title{
+  font-size:.8rem;
+  color:#9ca3af;
+  margin-bottom:.6rem;
+  text-transform:uppercase;
+}
+
+.status-pill{
+  padding:.5rem 1rem;
+  border-radius:20px;
+  display:inline-block;
+  font-size:.85rem;
+  font-weight:600;
+}
+
+.offline{
+  background:rgba(239,68,68,.2);
+  color:#ef4444;
+}
+
+.online{
+  background:rgba(34,197,94,.2);
+  color:#22c55e;
+}
+
+input,
+select{
+  width:100%;
+  padding:.85rem;
+  margin-bottom:.8rem;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.1);
+  background:#111827;
+  color:white;
+}
+
+.route-mode-toggle{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:.45rem;
+  margin-bottom:.9rem;
+}
+
+.route-mode-toggle button{
+  padding:.7rem;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.12);
+  background:#111827;
+  color:#cbd5e1;
+  cursor:pointer;
+  font-weight:600;
+}
+
+.route-mode-toggle button.active{
+  background:#2563eb;
+  color:white;
+  border-color:#60a5fa;
+}
+
+.location-method-toggle{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:.45rem;
+  margin-bottom:.8rem;
+}
+
+.location-method-toggle button{
+  padding:.65rem;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.12);
+  background:#111827;
+  color:#cbd5e1;
+  cursor:pointer;
+  font-weight:600;
+}
+
+.location-method-toggle button.active{
+  background:#16a34a;
+  color:white;
+  border-color:#4ade80;
+}
+
+.map-pick-status{
+  display:none;
+  margin-bottom:.8rem;
+  padding:.75rem;
+  border-radius:10px;
+  background:rgba(37,99,235,.12);
+  border:1px solid rgba(96,165,250,.3);
+  color:#bfdbfe;
+  font-size:.84rem;
+}
+
+.btn{
+  width:100%;
+  padding:.9rem;
+  border:none;
+  border-radius:10px;
+  cursor:pointer;
+  font-weight:600;
+}
+
+.btn-danger{
+  background:#ef4444;
+  color:white;
+}
+
+.btn-secondary{
+  background:#374151;
+  color:white;
+}
+
+.btn-preview{
+  background:#2563eb;
+  color:white;
+  margin-bottom:.7rem;
+}
+
+.btn:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+
+.route-actions{
+  display:grid;
+  gap:.7rem;
+}
+
+.route-status{
+  margin-top:1rem;
+  padding:.8rem;
+  border-radius:12px;
+  background:rgba(34,197,94,.1);
+  border:1px solid rgba(34,197,94,.3);
+}
+
+.alternate-route-message{
+  display:none;
+  margin-top:-.35rem;
+  padding:.7rem;
+  border-radius:10px;
+  background:rgba(37,99,235,.1);
+  border:1px solid rgba(96,165,250,.25);
+  color:#bfdbfe;
+  font-size:.83rem;
+}
+
+.logout-btn{
+  display:block;
+  text-align:center;
+  text-decoration:none;
+  background:#ef4444;
+  color:white;
+  padding:.9rem;
+  border-radius:10px;
+  font-weight:600;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="layout">
+
+<!-- SIDE PANEL -->
+
+<aside class="side-panel">
+
+<div class="glass-card">
+
+<h2>
+🚑 {{ ambulance_number }}
+</h2>
+
+<p>
+{{ driver_name }}
+</p>
+
+<p>
+{{ hospital }}
+</p>
+
+</div>
+
+<!-- GPS -->
+
+<div class="glass-card">
+
+<div class="section-title">
+GPS Status
+</div>
+
+<div id="gps-status"
+     class="status-pill offline">
+
+GPS Inactive
+
+</div>
+
+<div id="coord-display"
+     style="
+     margin-top:.7rem;
+     font-size:.82rem;
+     color:#9ca3af;">
+
+-- , --
+
+</div>
+
+</div>
+
+<!-- ROUTE FORM -->
+
+<div class="glass-card">
+
+<div class="section-title">
+Emergency Route
+</div>
+
+<form id="route-form">
+
+<div class="route-mode-toggle">
+
+<button
+ type="button"
+ id="mode-to-hospital"
+ class="active"
+ data-route-mode="toHospital">
+
+To Hospital
+
+</button>
+
+<button
+ type="button"
+ id="mode-from-hospital"
+ data-route-mode="fromHospital">
+
+From Hospital
+
+</button>
+
+</div>
+
+<label id="person-location-label">Patient / Pickup Location</label>
+
+<div class="location-method-toggle">
+
+<button
+ type="button"
+ id="person-location-typed"
+ class="active"
+ data-person-location-mode="typed">
+
+Type Location
+
+</button>
+
+<button
+ type="button"
+ id="person-location-map"
+ data-person-location-mode="map">
+
+Select on Map
+
+</button>
+
+</div>
+
+<input
+ type="text"
+ id="inp-source"
+ placeholder="Enter pickup/source location"
+ required>
+
+<label id="hospital-label">Destination Hospital</label>
+
+<select id="inp-hospital" required>
+
+  <option value="">
+    Select Hospital
+  </option>
+
+  <option value="Government Medical College Jammu">
+    Government Medical College Jammu
+  </option>
+
+  <option value="SMGS Hospital">
+    SMGS Hospital
+  </option>
+
+  <option value="AIIMS Vijaypur">
+    AIIMS Vijaypur
+  </option>
+
+  <option value="Fortis Hospital Jammu">
+    Fortis Hospital Jammu
+  </option>
+
+  <option value="ASCOMS Hospital">
+    ASCOMS Hospital
+  </option>
+
+  <option value="Bee Enn Hospital">
+    Bee Enn Hospital
+  </option>
+
+  <option value="Sub District Hospital Akhnoor">
+    Sub District Hospital Akhnoor
+  </option>
+
+  <option value="Narayana Hospital Katra">
+    Narayana Hospital Katra
+  </option>
+
+</select>
+
+<div
+ id="map-pick-status"
+ class="map-pick-status">
+
+Click the person's location on the map to set destination.
+
+</div>
+
+<button
+ type="button"
+ id="clear-person-location"
+ class="btn btn-secondary"
+ style="display:none;margin-bottom:.8rem;">
+
+Clear Selected Location
+
+</button>
+
+<button
+ type="submit"
+ class="btn btn-danger">
+
+🚨 Start Emergency Route
+
+</button>
+
+</form>
+
+<div
+ id="route-status"
+ class="route-status"
+ style="display:{{ 'block' if active_route else 'none' }};">
+
+✅ Emergency route active
+
+</div>
+
+</div>
+
+<!-- CURRENT ROUTE -->
+
+<div
+ id="current-route-card"
+ class="glass-card"
+ style="display:{{ 'block' if active_route else 'none' }};">
+
+<div class="section-title">
+Current Route
+</div>
+
+<p>
+<b>From:</b>
+<span id="current-route-source">
+{{ active_route.source if active_route else '' }}
+</span>
+</p>
+
+<p>
+<b>To:</b>
+<span id="current-route-destination">
+{{ active_route.destination if active_route else '' }}
+</span>
+</p>
+
+<div class="route-actions">
+
+<button
+ type="button"
+ id="preview-alt-route"
+ class="btn btn-preview">
+
+Preview Alternative Route
+
+</button>
+
+<div
+ id="alternate-route-message"
+ class="alternate-route-message">
+</div>
+
+<form method="POST"
+      action="{{ url_for('ambulance.end_route') }}"
+      style="margin:0;">
+
+<button
+ type="submit"
+ class="btn btn-secondary">
+
+Cancel Route
+
+</button>
+
+</form>
+
+</div>
+
+</div>
+
+<!-- TRAFFIC SIMULATOR (TESTING) -->
+<div class="glass-card">
+  <div class="section-title">Traffic Simulator (Testing)</div>
+  <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 0.45rem; margin-bottom: 0.5rem;">
+    <button type="button" class="btn btn-secondary" style="padding: 0.5rem 0.2rem; font-size: 0.8rem;" onclick="toggleSimulateTraffic(1)">L1</button>
+    <button type="button" class="btn btn-secondary" style="padding: 0.5rem 0.2rem; font-size: 0.8rem;" onclick="toggleSimulateTraffic(2)">L2</button>
+    <button type="button" class="btn btn-secondary" style="padding: 0.5rem 0.2rem; font-size: 0.8rem;" onclick="toggleSimulateTraffic(3)">L3</button>
+    <button type="button" class="btn btn-secondary" style="padding: 0.5rem 0.2rem; font-size: 0.8rem;" onclick="toggleSimulateTraffic(4)">L4</button>
+  </div>
+  <div id="simulation-status" style="font-size: 0.78rem; color: #9ca3af; text-align: center;">
+    Click a lane to simulate high traffic
+  </div>
+</div>
+
+<!-- LOGOUT -->
+
+<div class="glass-card">
+
+<a href="{{ url_for('auth.logout') }}"
+   class="logout-btn">
+
+🚪 Logout
+
+</a>
+
+</div>
+
+</aside>
+
+<!-- MAP -->
+
+<div class="map-wrap">
+
+<div id="amb-map"></div>
+
+</div>
+
+</div>
+
+<script>
+
+const DRIVER_ID =
+  Number("{{ driver_id }}");
+
+const HAS_ACTIVE_ROUTE =
+  "{{ 'true' if active_route else 'false' }}" === 'true';
+
+let currentDestinationLat =
+  Number("{{ active_route.destination_lat if active_route else '' }}") || null;
+
+let currentDestinationLng =
+  Number("{{ active_route.destination_lng if active_route else '' }}") || null;
+
+let currentRouteLat =
+  Number("{{ active_route.lat if active_route and active_route.lat else active_route.source_lat if active_route else '' }}") || null;
+
+let currentRouteLng =
+  Number("{{ active_route.lng if active_route and active_route.lng else active_route.source_lng if active_route else '' }}") || null;
+
+let currentSourceName =
+  {{ (active_route.source if active_route else '')|tojson }};
+
+let currentDestinationName =
+  {{ (active_route.destination if active_route else '')|tojson }};
+
+const socket = io();
+const HIGH_TRAFFIC_DENSITY = 13;
+
+// Jammu center
+const map = L.map('amb-map')
+  .setView([32.7266, 74.8570], 12);
+
+L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {
+    attribution:'© OpenStreetMap'
+  }
+).addTo(map);
+
+// Icons
+const ambulanceIcon = L.divIcon({
+
+  html:`
+  <div style="
+    font-size:2rem;
+    filter:drop-shadow(
+      0 0 10px red
+    );">
+
+    🚑
+
+  </div>`,
+
+  className:'',
+  iconAnchor:[18,18]
+});
+
+const hospitalIcon = L.divIcon({
+
+  html:`
+  <div style="
+    font-size:2rem;">
+
+    🏥
+
+  </div>`,
+
+  className:'',
+  iconAnchor:[18,18]
+});
+
+const personIcon = L.divIcon({
+
+  html:`
+  <div style="
+    font-size:2rem;
+    filter:drop-shadow(
+      0 0 8px #2563eb
+    );">
+
+    &#128205;
+
+  </div>`,
+
+  className:'',
+  iconAnchor:[18,36]
+});
+
+const signalLocations = {
+  1:{lat:32.722156,lng:74.857295,label:'Lane 1 Signal'},
+  2:{lat:32.717817,lng:74.859390,label:'Lane 2 Signal'},
+  3:{lat:32.74003,lng:74.83403,label:'Lane 3 Signal'},
+  4:{lat:32.73328,lng:74.83991,label:'Lane 4 Signal'}
+};
+
+function signalIcon(status,lane){
+  const colors = {
+    red:'#ef4444',
+    green:'#22c55e',
+    orange:'#f59e0b'
+  };
+
+  const activeColor = colors[status] || '#64748b';
+
+  return L.divIcon({
+    html:`
+      <div style="
+        width:34px;
+        padding:4px;
+        border-radius:12px;
+        background:#111827;
+        border:2px solid ${activeColor};
+        box-shadow:0 0 14px ${activeColor};
+        text-align:center;">
+        <div style="font-size:10px;color:white;font-weight:700;margin-bottom:2px;">L${lane}</div>
+        ${['red','orange','green'].map(color => `
+          <div style="
+            width:14px;
+            height:14px;
+            border-radius:50%;
+            margin:3px auto;
+            background:${status === color ? colors[color] : '#374151'};
+            box-shadow:${status === color ? `0 0 10px ${colors[color]}` : 'none'};">
+          </div>
+        `).join('')}
+      </div>`,
+    className:'',
+    iconAnchor:[17,48]
+  });
+}
+
+// Hospital database
+const hospitals = {
+
+  "Government Medical College Jammu":{
+    lat:32.7381,
+    lng:74.8665
+  },
+
+  "SMGS Hospital":{
+    lat:32.7268,
+    lng:74.8575
+  },
+
+  "AIIMS Vijaypur":{
+    lat:32.6200,
+    lng:74.9500
+  },
+
+  "Fortis Hospital Jammu":{
+    lat:32.7080,
+    lng:74.8690
+  },
+
+  "ASCOMS Hospital":{
+    lat:32.6815,
+    lng:74.8370
+  },
+
+  "Bee Enn Hospital":{
+    lat:32.7305,
+    lng:74.8640
+  },
+
+  "Sub District Hospital Akhnoor":{
+    lat:32.8670,
+    lng:74.7350
+  },
+
+  "Narayana Hospital Katra":{
+    lat:32.9910,
+    lng:74.9310
+  }
+
+};
+
+// Globals
+let ambulanceMarker = null;
+
+let fullRouteCoords = [];
+let alternativeRouteCoords = [];
+
+let coveredRouteLine = null;
+let remainingRouteLine = null;
+let alternativeRouteLine = null;
+
+let hospitalMarker = null;
+let personMarker = null;
+
+let routeStarted = false;
+let routeMode = 'toHospital';
+let personLocationMode = 'typed';
+let selectedPersonLocation = null;
+let alternativeRoutePreviewPinned = false;
+let alternativeRouteLoading = false;
+let alternativeAvoidLane = null;
+let latestTrafficState = {};
+
+const signalMarkers = {};
+const densityOverlays = ITMSDensityOverlay.create(map, signalLocations);
+
+Object.entries(signalLocations).forEach(([lane,point])=>{
+  signalMarkers[lane] = L.marker(
+    [point.lat,point.lng],
+    { icon:signalIcon('red',lane) }
+  ).addTo(map).bindPopup(`${point.label} Signal`);
+});
+
+let simulatedLanes = {};
+
+function toggleSimulateTraffic(lane) {
+  simulatedLanes[lane] = !simulatedLanes[lane];
+  const btn = document.querySelector(`button[onclick="toggleSimulateTraffic(${lane})"]`);
+  if (btn) {
+    if (simulatedLanes[lane]) {
+      btn.style.background = '#ef4444';
+      btn.style.borderColor = '#ef4444';
+      btn.style.color = '#ffffff';
+    } else {
+      btn.style.background = '#111827';
+      btn.style.borderColor = 'rgba(255,255,255,.1)';
+      btn.style.color = '#cbd5e1';
+    }
+  }
+  
+  const activeLanes = Object.keys(simulatedLanes).filter(l => simulatedLanes[l]);
+  document.getElementById('simulation-status').innerText = activeLanes.length 
+    ? `Simulated high traffic on Lane(s): ${activeLanes.join(', ')}`
+    : 'Click a lane to simulate high traffic';
+    
+  applySimulatedTraffic();
+  updateAlternativeRoute();
+}
+
+function applySimulatedTraffic() {
+  Object.keys(simulatedLanes).forEach(lane => {
+    if (simulatedLanes[lane]) {
+      if (!latestTrafficState[lane]) {
+        latestTrafficState[lane] = {};
+      }
+      latestTrafficState[lane].density = 18; // High traffic
+    }
+  });
+}
+
+socket.on('state_update', data => {
+  const state = data.traffic_state || {};
+  latestTrafficState = state;
+  
+  applySimulatedTraffic();
+
+  for(let i=1;i<=4;i++){
+    if(!latestTrafficState[i] || !signalMarkers[i]) continue;
+
+    signalMarkers[i].setIcon(
+      signalIcon(latestTrafficState[i].status,i)
+    );
+  }
+
+  ITMSDensityOverlay.update(
+    densityOverlays,
+    signalLocations,
+    latestTrafficState
+  );
+
+  updateAlternativeRoute();
+});
+
+// GPS
+function startTracking(){
+
+  if(!navigator.geolocation){
+
+    alert(
+      'GPS not supported'
+    );
+
+    return;
+  }
+
+  navigator.geolocation.watchPosition(
+
+    onPosition,
+
+    onGeoError,
+
+    {
+      enableHighAccuracy:true,
+      maximumAge:1000,
+      timeout:10000
+    }
+  );
+
+  const gps =
+    document.getElementById(
+      'gps-status'
+    );
+
+  gps.innerText =
+    'GPS Active';
+
+  gps.classList.remove(
+    'offline'
+  );
+
+  gps.classList.add(
+    'online'
+  );
+}
+
+// GPS updates
+function onPosition(pos){
+
+  const lat =
+    pos.coords.latitude;
+
+  const lng =
+    pos.coords.longitude;
+
+  currentRouteLat = lat;
+  currentRouteLng = lng;
+
+  document.getElementById(
+    'coord-display'
+  ).innerText =
+    `${lat.toFixed(5)},
+     ${lng.toFixed(5)}`;
+
+  // Marker
+  if(!ambulanceMarker){
+
+    ambulanceMarker =
+      L.marker(
+        [lat,lng],
+        {
+          icon:ambulanceIcon
+        }
+      ).addTo(map);
+
+  }else{
+
+    ambulanceMarker
+      .setLatLng([lat,lng]);
+  }
+
+  map.panTo([lat,lng]);
+
+  updateCoveredRoute(
+    lat,
+    lng
+  );
+
+  // Backend update
+  if(routeStarted){
+
+    fetch(
+      '/ambulance/update_location',
+      {
+
+      method:'POST',
+
+      headers:{
+        'Content-Type':
+        'application/json'
+      },
+
+      body:JSON.stringify({
+        lat,
+        lng
+      })
+
+    })
+
+    .then(async res => {
+
+      if(!res.ok){
+
+        const data =
+          await res.json();
+
+        console.log(
+          'GPS skipped:',
+          data.error
+        );
+
+        return;
+      }
+
+      return res.json();
+
+    })
+
+    .then(data => {
+
+      if(data){
+
+        console.log(
+          'GPS synced'
+        );
+      }
+
+    })
+
+    .catch(err => {
+
+      console.log(
+        'GPS error:',
+        err
+      );
+
+    });
+
+    // Socket sync
+    socket.emit(
+      'ambulance_location',
+      {
+        driver_id:
+          DRIVER_ID,
+        lat,
+        lng,
+        destination_lat:
+          currentDestinationLat,
+        destination_lng:
+          currentDestinationLng,
+        source:
+          currentSourceName,
+        destination:
+          currentDestinationName,
+        active:true
+      }
+    );
+  }
+}
+
+function onGeoError(err){
+
+  alert(
+    'Please allow GPS access.'
+  );
+
+  console.log(err);
+}
+
+function osrmRouteUrl(points, alternatives=false){
+  const coordinates =
+    points
+      .map(point => `${point.lng},${point.lat}`)
+      .join(';');
+
+  return (
+    `https://router.project-osrm.org/route/v1/driving/`
+    +
+    coordinates
+    +
+    `?overview=full&geometries=geojson&alternatives=${alternatives}`
+  );
+}
+
+function routeToLatLngs(route){
+  return route
+    .geometry
+    .coordinates
+    .map(
+      c => [c[1],c[0]]
+    );
+}
+
+let googleRouteDisabled = false;
+
+async function fetchRouteCoords(points){
+  if (!googleRouteDisabled) {
+    const googleCoords =
+      await fetchGoogleRouteCoords(
+        points
+      );
+
+    if(googleCoords)
+      return googleCoords;
+  }
+
+  const response =
+    await fetch(
+      osrmRouteUrl(points,false)
+    );
+
+  const data =
+    await response.json();
+
+  if(
+    data.routes &&
+    data.routes.length
+  ){
+    return routeToLatLngs(
+      data.routes[0]
+    );
+  }
+
+  return null;
+}
+
+async function fetchGoogleRouteCoords(points){
+  try{
+    const response =
+      await fetch(
+        '/ambulance/google_route',
+        {
+          method:'POST',
+          headers:{
+            'Content-Type':'application/json'
+          },
+          body:JSON.stringify({
+            points
+          })
+        }
+      );
+
+    if(!response.ok) {
+      googleRouteDisabled = true;
+      return null;
+    }
+
+    const data =
+      await response.json();
+
+    if(
+      data.coords &&
+      data.coords.length
+    ){
+      return data.coords;
+    }
+
+  }catch(err){
+    console.log(
+      'Google route unavailable, using OSRM:',
+      err
+    );
+  }
+
+  return null;
+}
+
+function closestRouteIndex(point, route){
+  let closestIndex = 0;
+  let closestDistance = Infinity;
+
+  route.forEach((routePoint,index) => {
+    const distance =
+      distanceMeters(
+        point,
+        routePoint
+      );
+
+    if(distance < closestDistance){
+      closestDistance = distance;
+      closestIndex = index;
+    }
+  });
+
+  return closestIndex;
+}
+
+function routeIndexByDistance(route, startIndex, targetMeters, direction){
+  let distance = 0;
+  let index = startIndex;
+
+  while(
+    index + direction >= 0 &&
+    index + direction < route.length &&
+    distance < targetMeters
+  ){
+    const nextIndex =
+      index + direction;
+
+    distance += distanceMeters(
+      route[index],
+      route[nextIndex]
+    );
+
+    index = nextIndex;
+  }
+
+  return index;
+}
+
+function routeLengthMeters(route){
+  if(!route || route.length < 2)
+    return 0;
+
+  let total = 0;
+
+  for(let i=0;i<route.length-1;i++){
+    total += distanceMeters(
+      route[i],
+      route[i+1]
+    );
+  }
+
+  return total;
+}
+
+async function fetchTrafficLightDetourRoute(mainRoute, avoidSignal){
+  if(
+    !avoidSignal ||
+    !mainRoute ||
+    mainRoute.length < 4
+  ) return null;
+
+  const signalPoint = [
+    avoidSignal.lat,
+    avoidSignal.lng
+  ];
+
+  const signalIndex =
+    closestRouteIndex(
+      signalPoint,
+      mainRoute
+    );
+
+  const beforeIndex =
+    routeIndexByDistance(
+      mainRoute,
+      signalIndex,
+      1200,
+      -1
+    );
+
+  const afterIndex =
+    routeIndexByDistance(
+      mainRoute,
+      signalIndex,
+      1200,
+      1
+    );
+
+  if(beforeIndex === afterIndex)
+    return null;
+
+  const before =
+    mainRoute[beforeIndex];
+
+  const after =
+    mainRoute[afterIndex];
+
+  const blockedMainSection =
+    mainRoute.slice(
+      Math.min(beforeIndex, afterIndex),
+      Math.max(beforeIndex, afterIndex) + 1
+    );
+
+  const blockedDistance =
+    routeLengthMeters(
+      blockedMainSection
+    );
+
+  const deltaLat =
+    after[0] - before[0];
+
+  const deltaLng =
+    after[1] - before[1];
+
+  const length =
+    Math.hypot(
+      deltaLat,
+      deltaLng
+    ) || 1;
+
+  const perpendicularLat =
+    -deltaLng / length;
+
+  const perpendicularLng =
+    deltaLat / length;
+
+  const offsets = [
+    .002,
+    -.002,
+    .003,
+    -.003,
+    .005,
+    -.005,
+    .008,
+    -.008,
+    .012,
+    -.012
+  ];
+
+  for(const offset of offsets){
+    const via = {
+      lat:avoidSignal.lat + perpendicularLat * offset,
+      lng:avoidSignal.lng + perpendicularLng * offset
+    };
+
+    try{
+      const coords =
+        await fetchRouteCoords([
+          {
+            lat:before[0],
+            lng:before[1]
+          },
+          via,
+          {
+            lat:after[0],
+            lng:after[1]
+          }
+        ]);
+
+      if(!coords || coords.length < 2)
+        continue;
+
+      const detourDistance =
+        routeLengthMeters(
+          coords
+        );
+
+      const startsNearBypassPoint =
+        distanceMeters(
+          coords[0],
+          before
+        ) <= 250;
+
+      const endsNearRejoinPoint =
+        distanceMeters(
+          coords[coords.length - 1],
+          after
+        ) <= 250;
+
+      if(
+        !startsNearBypassPoint ||
+        !endsNearRejoinPoint
+      ) continue;
+
+      if(
+        blockedDistance &&
+        detourDistance >
+          Math.max(
+            blockedDistance * 3.0,
+            blockedDistance + 2500
+          )
+      ) continue;
+
+      if(detourDistance > 5000)
+        continue;
+
+      const signalToDetour =
+        distanceToRouteMeters(
+          signalPoint,
+          coords
+        );
+
+      const detourMid =
+        coords[
+          Math.floor(coords.length / 2)
+        ];
+
+      if(
+        signalToDetour > 120 &&
+        distanceToRouteMeters(
+          detourMid,
+          mainRoute
+        ) > 30 &&
+        distanceToRouteMeters(
+          detourMid,
+          blockedMainSection
+        ) > 30
+      ){
+        return coords;
+      }
+
+    }catch(err){
+      console.log(
+        'Traffic-light detour failed:',
+        err
+      );
+    }
+  }
+
+  return null;
+}
+
+async function fetchFallbackAlternativeRoute(
+  startLat,
+  startLng,
+  endLat,
+  endLng,
+  mainRoute,
+  avoidSignal=null
+){
+  console.log(`[AltRoute] Building alternate route. avoidSignal=`, avoidSignal?.lane, `start=(${startLat},${startLng}) end=(${endLat},${endLng})`);
+
+  // Determine which lanes are actively congested globally
+  const l1CongestedGlobal = (latestTrafficState[1]?.density || 0) >= HIGH_TRAFFIC_DENSITY;
+  const l2CongestedGlobal = (latestTrafficState[2]?.density || 0) >= HIGH_TRAFFIC_DENSITY;
+  const l3CongestedGlobal = (latestTrafficState[3]?.density || 0) >= HIGH_TRAFFIC_DENSITY;
+  const l4CongestedGlobal = (latestTrafficState[4]?.density || 0) >= HIGH_TRAFFIC_DENSITY;
+
+  // Helper to check if a lane signal is close to the main route
+  function isLaneOnRoute(lane) {
+    const sig = signalLocations[lane];
+    if (!sig) return false;
+    return distanceToRouteMeters([sig.lat, sig.lng], mainRoute) <= 300;
+  }
+
+  const avoidLane = avoidSignal?.lane;
+
+  // We only care about a lane's congestion if it's actually on the route we are trying to bypass
+  const l1CongestedOnRoute = l1CongestedGlobal && isLaneOnRoute(1);
+  const l2CongestedOnRoute = l2CongestedGlobal && isLaneOnRoute(2);
+  const l3CongestedOnRoute = l3CongestedGlobal && isLaneOnRoute(3);
+  const l4CongestedOnRoute = l4CongestedGlobal && isLaneOnRoute(4);
+
+  const isL1orL2 = l1CongestedOnRoute || l2CongestedOnRoute || avoidLane == 1 || avoidLane == 2;
+  const isL3orL4 = l3CongestedOnRoute || l4CongestedOnRoute || avoidLane == 3 || avoidLane == 4;
+
+  // Helper: check that a candidate route properly bypasses all actively congested signals
+  function routeBypassesCongestion(coords) {
+    const checks = [];
+    if (l1CongestedGlobal || avoidLane == 1) checks.push(1);
+    if (l2CongestedGlobal || avoidLane == 2) checks.push(2);
+    if (l3CongestedGlobal || avoidLane == 3) checks.push(3);
+    if (l4CongestedGlobal || avoidLane == 4) checks.push(4);
+    if (!checks.length && avoidSignal) checks.push(avoidLane);
+    for (const lane of checks) {
+      const sig = signalLocations[lane];
+      if (!sig) continue;
+      const d = distanceToRouteMeters([sig.lat, sig.lng], coords);
+      console.log(`[AltRoute] Candidate route distance from Lane ${lane} signal: ${d.toFixed(0)}m`);
+      if (d <= 60) return false;
+    }
+    return true;
+  }
+
+  // 1. MULTI-ZONE COMBO BYPASS (when BOTH L1/L2 AND L3/L4 are congested simultaneously)
+  if (isL1orL2 && isL3orL4) {
+    console.log('[AltRoute] Multi-zone congestion (L1/L2 + L3/L4). Trying combination waypoints...');
+    const comboL12 = [
+      { lat: 32.71399, lng: 74.84840 },
+      { lat: 32.72061, lng: 74.84359 },
+      { lat: 32.72512, lng: 74.86952 },
+      { lat: 32.72220, lng: 74.87132 },
+      { lat: 32.72543, lng: 74.86934 },
+      { lat: 32.71886, lng: 74.87492 }
+    ];
+    const comboL34 = [
+      { lat: 32.73532, lng: 74.85723 },
+      { lat: 32.73475, lng: 74.85233 },
+      { lat: 32.73236, lng: 74.84434 },
+      { lat: 32.74276, lng: 74.86058 },
+      { lat: 32.74774, lng: 74.84288 },
+      { lat: 32.74420, lng: 74.83790 },
+      { lat: 32.74384, lng: 74.83052 },
+      { lat: 32.72810, lng: 74.84684 },
+      { lat: 32.73265, lng: 74.83404 },
+      { lat: 32.74182, lng: 74.81909 },
+      { lat: 32.74615, lng: 74.82399 }
+    ];
+    for (const b of comboL12) {
+      for (const wp of comboL34) {
+        try {
+          const coords = await fetchRouteCoords([
+            { lat: Number(startLat), lng: Number(startLng) },
+            { lat: b.lat,  lng: b.lng  },
+            { lat: wp.lat, lng: wp.lng },
+            { lat: Number(endLat), lng: Number(endLng) }
+          ]);
+          if (!coords || coords.length < 2) continue;
+          if (routeBypassesCongestion(coords)) {
+            console.log(`[AltRoute] MULTI-ZONE SUCCESS via bridge(${b.lat},${b.lng}) + wp(${wp.lat},${wp.lng})`);
+            return coords;
+          }
+        } catch (err) { /* try next combo */ }
+      }
+    }
+    console.log('[AltRoute] All multi-zone combos rejected. Trying individual group bypasses...');
+  }
+
+  // 2. BRIDGE BYPASS (for Lane 1 / Lane 2 congestion)
+  if (isL1orL2) {
+    const bridges = [
+      { lat: 32.71399, lng: 74.84840, name: 'Fourth Bridge Entry' },
+      { lat: 32.72061, lng: 74.84359, name: 'Fourth Bridge Exit' },
+      { lat: 32.72512, lng: 74.86952, name: 'Gujjar Nagar Bridge Entry' },
+      { lat: 32.72220, lng: 74.87132, name: 'Gujjar Nagar Bridge Exit' },
+      { lat: 32.72543, lng: 74.86934, name: 'Tawi River Bridge Entry' },
+      { lat: 32.71886, lng: 74.87492, name: 'Tawi River Bridge Exit' }
+    ];
+    for (const bridge of bridges) {
+      try {
+        const coords = await fetchRouteCoords([
+          { lat: Number(startLat), lng: Number(startLng) },
+          { lat: bridge.lat, lng: bridge.lng },
+          { lat: Number(endLat), lng: Number(endLng) }
+        ]);
+        if (!coords || coords.length < 2) { console.log(`[AltRoute] ${bridge.name}: no coords`); continue; }
+        if (routeBypassesCongestion(coords)) {
+          console.log(`[AltRoute] SUCCESS via ${bridge.name}`);
+          return coords;
+        }
+        console.log(`[AltRoute] ${bridge.name} route rejected.`);
+      } catch (err) { console.log(`[AltRoute] ${bridge.name} error:`, err); }
+    }
+    console.log('[AltRoute] All bridge routes rejected.');
+  }
+
+  // 3. BYPASS WAYPOINTS (for Lane 3 / Lane 4 congestion)
+  if (isL3orL4) {
+    console.log('[AltRoute] Traffic on Lane 3/4 — trying diversion waypoints...');
+    const l3l4Points = [
+      { lat: 32.73532, lng: 74.85723, name: 'A' },
+      { lat: 32.73475, lng: 74.85233, name: 'B' },
+      { lat: 32.73236, lng: 74.84434, name: 'C' },
+      { lat: 32.74276, lng: 74.86058, name: 'D' },
+      { lat: 32.74774, lng: 74.84288, name: 'E' },
+      { lat: 32.74420, lng: 74.83790, name: 'F' },
+      { lat: 32.74384, lng: 74.83052, name: 'G' },
+      { lat: 32.72810, lng: 74.84684, name: 'H' },
+      { lat: 32.73265, lng: 74.83404, name: 'I' },
+      { lat: 32.74182, lng: 74.81909, name: 'J' },
+      { lat: 32.74615, lng: 74.82399, name: 'K' }
+    ];
+
+    // Step A: Try single waypoints first (11 requests max)
+    for (const wp of l3l4Points) {
+      try {
+        const coords = await fetchRouteCoords([
+          { lat: Number(startLat), lng: Number(startLng) },
+          { lat: wp.lat, lng: wp.lng },
+          { lat: Number(endLat), lng: Number(endLng) }
+        ]);
+        if (!coords || coords.length < 2) continue;
+        if (routeBypassesCongestion(coords)) {
+          console.log(`[AltRoute] SUCCESS via single waypoint ${wp.name}`);
+          return coords;
+        }
+        console.log(`[AltRoute] Single ${wp.name} rejected (too close to signal).`);
+      } catch (err) { /* try next */ }
+    }
+
+    // Step B: Try 8 smart pre-planned pairs (geographically chosen: south+north combos)
+    const smartPairs = [
+      ['H','E'], ['H','D'], ['H','G'], ['H','K'],
+      ['C','E'], ['C','D'], ['I','K'], ['I','J']
+    ];
+    for (const [n1,n2] of smartPairs) {
+      const wp1 = l3l4Points.find(p => p.name === n1);
+      const wp2 = l3l4Points.find(p => p.name === n2);
+      if (!wp1 || !wp2) continue;
+      try {
+        const coords = await fetchRouteCoords([
+          { lat: Number(startLat), lng: Number(startLng) },
+          { lat: wp1.lat, lng: wp1.lng },
+          { lat: wp2.lat, lng: wp2.lng },
+          { lat: Number(endLat), lng: Number(endLng) }
+        ]);
+        if (!coords || coords.length < 2) continue;
+        if (routeBypassesCongestion(coords)) {
+          console.log(`[AltRoute] SUCCESS via smart pair ${n1}+${n2}`);
+          return coords;
+        }
+        console.log(`[AltRoute] Smart pair ${n1}+${n2} rejected.`);
+      } catch (err) { /* try next pair */ }
+    }
+    console.log('[AltRoute] All L3/L4 bypass attempts rejected.');
+  }
+
+  // 3. Query OSRM for real alternative routes
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&alternatives=true`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.routes && data.routes.length > 1) {
+      for (let i = 1; i < data.routes.length; i++) {
+        const altCoords = routeToLatLngs(data.routes[i]);
+        if (!altCoords || altCoords.length < 2) continue;
+
+        if (avoidSignal) {
+          const signalPoint = [avoidSignal.lat, avoidSignal.lng];
+          const distToSignal = distanceToRouteMeters(signalPoint, altCoords);
+          if (distToSignal > 180) {
+            console.log(`OSRM alternate route ${i} successfully bypasses traffic signal (distance: ${distToSignal.toFixed(1)}m)`);
+            return altCoords;
+          }
+        } else {
+          const altMid = altCoords[Math.floor(altCoords.length / 2)];
+          if (distanceToRouteMeters(altMid, mainRoute) > 180) {
+            return altCoords;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.log('OSRM alternative routes fetch failed:', err);
+  }
+
+  // 2. Fall back to tight local detour logic if no natural alternative is found
+  if(avoidSignal){
+    const detour =
+      await fetchTrafficLightDetourRoute(
+        mainRoute,
+        avoidSignal
+      );
+
+    if(detour)
+      return detour;
+  }
+
+  const center =
+    avoidSignal
+      ? [avoidSignal.lat, avoidSignal.lng]
+      : (
+        mainRoute[
+          Math.floor(mainRoute.length / 2)
+        ] || [
+          (Number(startLat) + Number(endLat)) / 2,
+          (Number(startLng) + Number(endLng)) / 2
+        ]
+      );
+
+  const deltaLat =
+    Number(endLat) - Number(startLat);
+
+  const deltaLng =
+    Number(endLng) - Number(startLng);
+
+  const length =
+    Math.hypot(
+      deltaLat,
+      deltaLng
+    ) || 1;
+
+  const perpendicularLat =
+    -deltaLng / length;
+
+  const perpendicularLng =
+    deltaLat / length;
+
+  const offsets = [
+    .006,
+    -.006,
+    .012,
+    -.012,
+    .02,
+    -.02,
+    .03,
+    -.03
+  ];
+
+  for(const offset of offsets){
+    const via = {
+      lat:center[0] + perpendicularLat * offset,
+      lng:center[1] + perpendicularLng * offset
+    };
+
+    try{
+      const coords =
+        await fetchRouteCoords([
+          {
+            lat:Number(startLat),
+            lng:Number(startLng)
+          },
+          via,
+          {
+            lat:Number(endLat),
+            lng:Number(endLng)
+          }
+        ]);
+
+      if(!coords || coords.length < 2)
+        continue;
+
+      // Strictly ensure this candidate alternate route physically bypasses the congested signal
+      if (avoidSignal) {
+        const signalPoint = [avoidSignal.lat, avoidSignal.lng];
+        const distToSignal = distanceToRouteMeters(signalPoint, coords);
+        if (distToSignal <= 180) {
+          console.log(`Global candidate route still passes through Lane ${avoidSignal.lane} signal (distance: ${distToSignal.toFixed(1)}m). Rejecting.`);
+          continue; 
+        }
+      }
+
+      const altMid =
+        coords[
+          Math.floor(coords.length / 2)
+        ];
+
+      if(
+        distanceToRouteMeters(
+          altMid,
+          mainRoute
+        ) > 180
+      ){
+        console.log(`Successfully found a highly accurate, fully independent alternate route bypassing the congestion.`);
+        return coords;
+      }
+
+    }catch(err){
+      console.log(
+        'Fallback alternative failed:',
+        err
+      );
+    }
+  }
+
+  return null;
+}
+
+// Draw route
+async function drawEmergencyRoute(
+  startLat,
+  startLng,
+  endLat,
+  endLng
+){
+
+  let coords =
+    await fetchRouteCoords([
+      {
+        lat:startLat,
+        lng:startLng
+      },
+      {
+        lat:endLat,
+        lng:endLng
+      }
+    ]);
+
+  let alternateCoords = null;
+
+  if(
+    coords &&
+    alternativeRoutePreviewPinned
+  ){
+    const congestedSignal =
+      highestDensitySignalOnCurrentRoute(
+        coords
+      );
+
+    if(congestedSignal){
+      const trafficLightAlternative =
+        await fetchFallbackAlternativeRoute(
+          startLat,
+          startLng,
+          endLat,
+          endLng,
+          coords,
+          congestedSignal
+        );
+
+      if(trafficLightAlternative){
+        alternateCoords =
+          trafficLightAlternative;
+        alternativeAvoidLane =
+          congestedSignal.lane;
+      }
+    }
+  }
+
+  fullRouteCoords =
+    coords || [
+      [Number(startLat),Number(startLng)],
+      [Number(endLat),Number(endLng)]
+    ];
+
+  alternativeRouteCoords =
+    alternateCoords || [];
+
+  // Remove old
+  if(remainingRouteLine)
+    map.removeLayer(
+      remainingRouteLine
+    );
+
+  if(alternativeRouteLine){
+    map.removeLayer(
+      alternativeRouteLine
+    );
+
+    alternativeRouteLine = null;
+  }
+
+  remainingRouteLine =
+    L.polyline(
+      fullRouteCoords,
+      {
+        color:'red',
+        weight:7,
+        opacity:.9
+      }
+    ).addTo(map);
+
+  // Destination marker
+  const lastPoint =
+    fullRouteCoords[
+      fullRouteCoords.length-1
+    ];
+
+  if(hospitalMarker)
+    map.removeLayer(
+      hospitalMarker
+    );
+
+  hospitalMarker =
+    L.marker(
+      lastPoint,
+      {
+        icon:hospitals[currentDestinationName]
+          ? hospitalIcon
+          : personIcon
+      }
+    ).addTo(map)
+     .bindPopup(
+       '🏥 Destination'
+     );
+
+  updateAlternativeRoute();
+  setPreviewButtonState();
+
+  map.fitBounds(
+    remainingRouteLine
+      .getBounds()
+  );
+}
+
+function distanceMeters(a,b){
+  const latMeters =
+    (a[0] - b[0]) * 111320;
+
+  const lngMeters =
+    (a[1] - b[1]) *
+    111320 *
+    Math.cos(
+      ((a[0] + b[0]) / 2) *
+      Math.PI / 180
+    );
+
+  return Math.hypot(
+    latMeters,
+    lngMeters
+  );
+}
+
+function projectPoint(point, origin){
+  return {
+    x:
+      (point[1] - origin[1]) *
+      111320 *
+      Math.cos(
+        origin[0] *
+        Math.PI / 180
+      ),
+    y:
+      (point[0] - origin[0]) *
+      111320
+  };
+}
+
+function distanceToSegmentMeters(point,a,b){
+  const p =
+    projectPoint(point,a);
+
+  const end =
+    projectPoint(b,a);
+
+  const lengthSq =
+    end.x * end.x +
+    end.y * end.y;
+
+  if(!lengthSq)
+    return distanceMeters(point,a);
+
+  const t =
+    Math.max(
+      0,
+      Math.min(
+        1,
+        (
+          p.x * end.x +
+          p.y * end.y
+        ) / lengthSq
+      )
+    );
+
+  return Math.hypot(
+    p.x - end.x * t,
+    p.y - end.y * t
+  );
+}
+
+function distanceToRouteMeters(point, route){
+  if(!route.length)
+    return Infinity;
+
+  if(route.length === 1)
+    return distanceMeters(
+      point,
+      route[0]
+    );
+
+  let closest =
+    Infinity;
+
+  for(
+    let i=0;
+    i<route.length-1;
+    i++
+  ){
+    closest =
+      Math.min(
+        closest,
+        distanceToSegmentMeters(
+          point,
+          route[i],
+          route[i+1]
+        )
+      );
+  }
+
+  return closest;
+}
+
+function highestDensitySignalOnCurrentRoute(route=fullRouteCoords){
+  let target = null;
+
+  Object.entries(
+    latestTrafficState || {}
+  ).forEach(([lane,laneState])=>{
+    const density =
+      Number(laneState?.density) || 0;
+
+    if(density < HIGH_TRAFFIC_DENSITY)
+      return;
+
+    const signal =
+      signalLocations[lane];
+
+    if(!signal)
+      return;
+
+    const routeDistance =
+      distanceToRouteMeters(
+        [signal.lat,signal.lng],
+        route
+      );
+
+    if(routeDistance > 300)
+      return;
+
+    if(
+      !target ||
+      density > target.density
+    ){
+      target = {
+        lane,
+        density,
+        status:laneState?.status,
+        lat:signal.lat,
+        lng:signal.lng,
+        routeDistance
+      };
+    }
+  });
+
+  return target;
+}
+
+function congestedLaneOnCurrentRoute(){
+  return Boolean(
+    highestDensitySignalOnCurrentRoute()
+  );
+}
+
+async function ensureTrafficLightAlternativeRoute(){
+  const congestedSignal =
+    highestDensitySignalOnCurrentRoute();
+
+  if(
+    !congestedSignal ||
+    alternativeRouteCoords.length ||
+    alternativeRouteLoading ||
+    !fullRouteCoords.length ||
+    !currentDestinationLat ||
+    !currentDestinationLng
+  ) {
+    console.log('[AltRoute] ensureTrafficLightAlternativeRoute BLOCKED:', {
+      noSignal: !congestedSignal,
+      alreadyHaveAlt: !!alternativeRouteCoords.length,
+      loading: alternativeRouteLoading,
+      noRoute: !fullRouteCoords.length,
+      noDestLat: !currentDestinationLat,
+      noDestLng: !currentDestinationLng
+    });
+    return false;
+  }
+
+  alternativeRouteLoading = true;
+
+  try{
+    const start =
+      currentRouteLat &&
+      currentRouteLng
+        ? {
+          lat:currentRouteLat,
+          lng:currentRouteLng
+        }
+        : {
+          lat:fullRouteCoords[0][0],
+          lng:fullRouteCoords[0][1]
+        };
+
+    const coords =
+      await fetchFallbackAlternativeRoute(
+        start.lat,
+        start.lng,
+        currentDestinationLat,
+        currentDestinationLng,
+        fullRouteCoords,
+        congestedSignal
+      );
+
+  if(coords && coords.length){
+      console.log('[AltRoute] ensureTrafficLightAlternativeRoute GOT ROUTE with', coords.length, 'points');
+      alternativeRouteCoords = coords;
+      alternativeAvoidLane =
+        congestedSignal.lane;
+      return true;
+    } else {
+      console.log('[AltRoute] ensureTrafficLightAlternativeRoute: fetchFallbackAlternativeRoute returned', coords);
+    }
+
+  }finally{
+    alternativeRouteLoading = false;
+    setPreviewButtonState();
+  }
+
+  return false;
+}
+
+function updateAlternativeRoute(){
+  const congestedSignal =
+    highestDensitySignalOnCurrentRoute();
+
+  if(alternativeRouteLine){
+    map.removeLayer(
+      alternativeRouteLine
+    );
+
+    alternativeRouteLine = null;
+  }
+
+  if(!alternativeRoutePreviewPinned)
+    return;
+
+  if(!congestedSignal){
+    alternativeRouteCoords = [];
+    alternativeAvoidLane = null;
+    setAlternateRouteMessage(
+      'Route is having no high traffic yet.'
+    );
+    return;
+  }
+
+  if(
+    congestedSignal &&
+    alternativeRouteCoords.length &&
+    alternativeAvoidLane &&
+    alternativeAvoidLane !== congestedSignal.lane
+  ){
+    alternativeRouteCoords = [];
+  }
+
+  if(!alternativeRouteCoords.length){
+    setAlternateRouteMessage(
+      `High traffic found near Lane ${congestedSignal.lane}. Checking local detour...`
+    );
+
+    ensureTrafficLightAlternativeRoute()
+      .then(created => {
+        if(created){
+          updateAlternativeRoute();
+        }else{
+          setAlternateRouteMessage(
+            `High traffic is on Lane ${congestedSignal.lane}, but no local bypass is available yet.`
+          );
+        }
+      });
+
+    return;
+  }
+
+  alternativeRouteLine =
+    L.polyline(
+      alternativeRouteCoords,
+      {
+        color:'#2563eb',
+        weight:7,
+        opacity:.85,
+        dashArray:'10,10'
+      }
+    ).addTo(map)
+     .bindPopup('Alternative Route');
+
+  alternativeRouteLine.bringToFront();
+  setAlternateRouteMessage(
+    `Showing local alternate route around high traffic near Lane ${congestedSignal.lane}.`
+  );
+}
+
+function divergentAlternativeSegments(){
+  const segments = [];
+  let current = [];
+
+  alternativeRouteCoords.forEach(point => {
+    const isDifferent =
+      distanceToRouteMeters(
+        point,
+        fullRouteCoords
+      ) > 120;
+
+    if(isDifferent){
+      current.push(point);
+      return;
+    }
+
+    if(current.length > 1)
+      segments.push(current);
+
+    current = [];
+  });
+
+  if(current.length > 1)
+    segments.push(current);
+
+  return segments;
+}
+
+function setPreviewButtonState(){
+  const button =
+    document.getElementById(
+      'preview-alt-route'
+    );
+
+  if(!button) return;
+
+  button.disabled =
+    !routeStarted;
+
+  button.innerText =
+    alternativeRoutePreviewPinned
+      ? 'Hide Alternative Route'
+      : 'Preview Alternative Route';
+}
+
+function setAlternateRouteMessage(message){
+  const box =
+    document.getElementById(
+      'alternate-route-message'
+    );
+
+  if(!box) return;
+
+  if(!message){
+    box.style.display =
+      'none';
+    box.innerText =
+      '';
+    return;
+  }
+
+  box.innerText =
+    message;
+  box.style.display =
+    'block';
+}
+
+function showActiveRouteControls(source,destination){
+  const card =
+    document.getElementById(
+      'current-route-card'
+    );
+
+  if(card)
+    card.style.display =
+      'block';
+
+  const sourceEl =
+    document.getElementById(
+      'current-route-source'
+    );
+
+  if(sourceEl)
+    sourceEl.innerText =
+      source || '';
+
+  const destinationEl =
+    document.getElementById(
+      'current-route-destination'
+    );
+
+  if(destinationEl)
+    destinationEl.innerText =
+      destination || '';
+
+  const status =
+    document.getElementById(
+      'route-status'
+    );
+
+  if(status)
+    status.style.display =
+      'block';
+
+  setPreviewButtonState();
+}
+
+async function toggleAlternativeRoutePreview(){
+  if(!routeStarted)
+    return;
+
+  if(alternativeRoutePreviewPinned){
+    alternativeRoutePreviewPinned = false;
+    updateAlternativeRoute();
+    setAlternateRouteMessage('');
+    setPreviewButtonState();
+    return;
+  }
+
+  alternativeRoutePreviewPinned = true;
+
+  updateAlternativeRoute();
+  setPreviewButtonState();
+}
+
+const previewAltButton =
+  document.getElementById(
+    'preview-alt-route'
+  );
+
+if(previewAltButton){
+  previewAltButton.addEventListener(
+    'click',
+    toggleAlternativeRoutePreview
+  );
+}
+
+function updateRouteModeUI(){
+  const toHospitalButton =
+    document.getElementById(
+      'mode-to-hospital'
+    );
+
+  const fromHospitalButton =
+    document.getElementById(
+      'mode-from-hospital'
+    );
+
+  const personInput =
+    document.getElementById(
+      'inp-source'
+    );
+
+  const personLabel =
+    document.getElementById(
+      'person-location-label'
+    );
+
+  const hospitalLabel =
+    document.getElementById(
+      'hospital-label'
+    );
+
+  const typedButton =
+    document.getElementById(
+      'person-location-typed'
+    );
+
+  const mapButton =
+    document.getElementById(
+      'person-location-map'
+    );
+
+  const pickStatus =
+    document.getElementById(
+      'map-pick-status'
+    );
+
+  const clearButton =
+    document.getElementById(
+      'clear-person-location'
+    );
+
+  toHospitalButton?.classList.toggle(
+    'active',
+    routeMode === 'toHospital'
+  );
+
+  fromHospitalButton?.classList.toggle(
+    'active',
+    routeMode === 'fromHospital'
+  );
+
+  typedButton?.classList.toggle(
+    'active',
+    personLocationMode === 'typed'
+  );
+
+  mapButton?.classList.toggle(
+    'active',
+    personLocationMode === 'map'
+  );
+
+  if(personLabel)
+    personLabel.innerText =
+      routeMode === 'fromHospital'
+        ? 'Person Destination Location'
+        : 'Patient / Pickup Location';
+
+  if(personInput){
+    personInput.style.display =
+      personLocationMode === 'typed'
+        ? 'block'
+        : 'none';
+
+    personInput.required =
+      personLocationMode === 'typed';
+
+    personInput.placeholder =
+      routeMode === 'fromHospital'
+        ? "Enter person's destination location"
+        : 'Enter pickup/source location';
+  }
+
+  if(routeMode === 'fromHospital'){
+    if(hospitalLabel)
+      hospitalLabel.innerText =
+        'Source Hospital';
+
+  }else{
+    if(hospitalLabel)
+      hospitalLabel.innerText =
+        'Destination Hospital';
+  }
+
+  if(pickStatus){
+    pickStatus.style.display =
+      personLocationMode === 'map'
+        ? 'block'
+        : 'none';
+
+    pickStatus.innerText =
+      selectedPersonLocation
+        ? `Selected location (${selectedPersonLocation.lat.toFixed(5)}, ${selectedPersonLocation.lng.toFixed(5)})`
+        : "Click the person's location on the map.";
+  }
+
+  if(clearButton)
+    clearButton.style.display =
+      selectedPersonLocation
+        ? 'block'
+        : 'none';
+}
+
+document
+  .querySelectorAll('[data-route-mode]')
+  .forEach(button => {
+    button.addEventListener(
+      'click',
+      () => {
+        routeMode =
+          button.dataset.routeMode;
+        updateRouteModeUI();
+      }
+    );
+  });
+
+document
+  .querySelectorAll('[data-person-location-mode]')
+  .forEach(button => {
+    button.addEventListener(
+      'click',
+      () => {
+        personLocationMode =
+          button.dataset.personLocationMode;
+        updateRouteModeUI();
+      }
+    );
+  });
+
+function clearSelectedPersonLocation(){
+  selectedPersonLocation = null;
+
+  if(personMarker){
+    map.removeLayer(
+      personMarker
+    );
+
+    personMarker = null;
+  }
+
+  updateRouteModeUI();
+}
+
+const clearPersonLocationButton =
+  document.getElementById(
+    'clear-person-location'
+  );
+
+if(clearPersonLocationButton){
+  clearPersonLocationButton.addEventListener(
+    'click',
+    clearSelectedPersonLocation
+  );
+}
+
+map.on('click', event => {
+  if(personLocationMode !== 'map')
+    return;
+
+  selectedPersonLocation = {
+    lat:event.latlng.lat,
+    lng:event.latlng.lng
+  };
+
+  if(personMarker)
+    map.removeLayer(
+      personMarker
+    );
+
+  personMarker =
+    L.marker(
+      [
+        selectedPersonLocation.lat,
+        selectedPersonLocation.lng
+      ],
+      {
+        icon:personIcon
+      }
+    ).addTo(map)
+     .bindPopup('Person location')
+     .openPopup();
+
+  updateRouteModeUI();
+});
+
+updateRouteModeUI();
+
+// Covered route
+function updateCoveredRoute(
+  lat,
+  lng
+){
+
+  if(
+    !fullRouteCoords.length
+  ) return;
+
+  let closestIndex = 0;
+
+  let minDist = Infinity;
+
+  fullRouteCoords.forEach(
+    (point,index)=>{
+
+      const dist =
+        Math.hypot(
+          point[0]-lat,
+          point[1]-lng
+        );
+
+      if(dist < minDist){
+
+        minDist = dist;
+
+        closestIndex = index;
+      }
+    }
+  );
+
+  const covered =
+    fullRouteCoords.slice(
+      0,
+      closestIndex
+    );
+
+  const remaining =
+    fullRouteCoords.slice(
+      closestIndex
+    );
+
+  if(coveredRouteLine)
+    map.removeLayer(
+      coveredRouteLine
+    );
+
+  if(remainingRouteLine)
+    map.removeLayer(
+      remainingRouteLine
+    );
+
+  // Covered
+  coveredRouteLine =
+    L.polyline(
+      covered,
+      {
+        color:'limegreen',
+        weight:7
+      }
+    ).addTo(map);
+
+  // Remaining
+  remainingRouteLine =
+    L.polyline(
+      remaining,
+      {
+        color:'red',
+        weight:7
+      }
+    ).addTo(map);
+
+  updateAlternativeRoute();
+}
+
+async function startEmergencyRoute(
+  source,
+  destination,
+  startLat,
+  startLng,
+  endLat,
+  endLng
+){
+  currentDestinationLat = endLat;
+  currentDestinationLng = endLng;
+  currentSourceName = source;
+  currentDestinationName = destination;
+  currentRouteLat = startLat;
+  currentRouteLng = startLng;
+  alternativeRoutePreviewPinned = false;
+  alternativeAvoidLane = null;
+  alternativeRouteCoords = [];
+  setAlternateRouteMessage('');
+
+  const body =
+    new URLSearchParams({
+      source,
+      destination,
+      source_lat:String(startLat),
+      source_lng:String(startLng),
+      destination_lat:String(endLat),
+      destination_lng:String(endLng)
+    });
+
+  const response =
+    await fetch(
+      '/ambulance/start_route',
+      {
+        method:'POST',
+        headers:{
+          'Content-Type':
+          'application/x-www-form-urlencoded'
+        },
+        body
+      }
+    );
+
+  if(!response.ok){
+    alert(
+      'Could not start emergency route.'
+    );
+
+    return;
+  }
+
+  await drawEmergencyRoute(
+    startLat,
+    startLng,
+    endLat,
+    endLng
+  );
+
+  routeStarted = true;
+
+  showActiveRouteControls(
+    source,
+    destination
+  );
+
+  startTracking();
+}
+
+async function geocodeTypedPersonLocation(location){
+  const response =
+    await fetch(
+      `/ambulance/geocode?q=${encodeURIComponent(location)}`
+    );
+
+  if(!response.ok)
+    return null;
+
+  return response.json();
+}
+
+async function getPersonLocation(){
+  if(personLocationMode === 'map'){
+    if(!selectedPersonLocation){
+      alert(
+        "Click the person's location on the map first."
+      );
+
+      return null;
+    }
+
+    return {
+      name:`Person location (${selectedPersonLocation.lat.toFixed(5)}, ${selectedPersonLocation.lng.toFixed(5)})`,
+      lat:selectedPersonLocation.lat,
+      lng:selectedPersonLocation.lng
+    };
+  }
+
+  const input =
+    document.getElementById(
+      'inp-source'
+    );
+
+  const name =
+    input.value.trim();
+
+  if(!name){
+    alert(
+      "Enter the person's location."
+    );
+
+    return null;
+  }
+
+  const point =
+    await geocodeTypedPersonLocation(
+      name
+    );
+
+  if(!point){
+    alert(
+      'Could not find that location. Try selecting it on the map.'
+    );
+
+    return null;
+  }
+
+  return {
+    name,
+    lat:Number(point.lat),
+    lng:Number(point.lng)
+  };
+}
+
+// Route form
+const form =
+  document.getElementById(
+    'route-form'
+  );
+
+if(form){
+
+  form.addEventListener(
+
+    'submit',
+
+    async e => {
+
+      e.preventDefault();
+
+      const hospitalName =
+        document.getElementById(
+          'inp-hospital'
+        ).value;
+
+      const hospitalData =
+        hospitals[hospitalName];
+
+      if(!hospitalData){
+        alert(
+          'Hospital not found'
+        );
+
+        return;
+      }
+
+      const personLocation =
+        await getPersonLocation();
+
+      if(!personLocation)
+        return;
+
+      if(routeMode === 'fromHospital'){
+        const source =
+          hospitalName;
+
+        const destination =
+          personLocation.name;
+
+        await startEmergencyRoute(
+          source,
+          destination,
+          hospitalData.lat,
+          hospitalData.lng,
+          personLocation.lat,
+          personLocation.lng
+        );
+
+        return;
+      }
+
+      await startEmergencyRoute(
+        personLocation.name,
+        hospitalName,
+        personLocation.lat,
+        personLocation.lng,
+        hospitalData.lat,
+        hospitalData.lng
+      );
+    }
+  );
+}
+
+// Existing route
+if(HAS_ACTIVE_ROUTE){
+
+  routeStarted = true;
+  showActiveRouteControls(
+    currentSourceName,
+    currentDestinationName
+  );
+
+  window.addEventListener(
+    'load',
+    async () => {
+      if(
+        currentRouteLat &&
+        currentRouteLng &&
+        currentDestinationLat &&
+        currentDestinationLng
+      ){
+        await drawEmergencyRoute(
+          currentRouteLat,
+          currentRouteLng,
+          currentDestinationLat,
+          currentDestinationLng
+        );
+      }
+
+      startTracking();
+    }
+  );
+}else{
+  setPreviewButtonState();
+}
+
+</script>
+
+</body>
+</html>
