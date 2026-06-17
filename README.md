@@ -80,9 +80,3 @@ Code/
 
 ---
 
-## GitHub Upload Checklist
-
-Before pushing to GitHub, ensure the following:
-1. **Exclude environment files and dependencies:** The `venv/` directory contains thousands of machine-specific files and should be ignored (this is handled by the `.gitignore`).
-2. **Exclude local databases:** The `users.db` file is ignored as SQLite databases contain dynamic run-time data. The database schema will be auto-generated when running `app.py` for the first time.
-3. **Exclude dynamic video uploads:** The `.gitignore` is set up to ignore video files in the `uploads/` and `videos/` folders, keeping the repository light while preserving the folders themselves using `.gitkeep`.
